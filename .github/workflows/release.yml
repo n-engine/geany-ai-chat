@@ -33,6 +33,7 @@ jobs:
 
       - name: Verify pkg-config modules
         run: |
+          set -eux
           pkg-config --modversion geany
           pkg-config --cflags geany gtk+-3.0
           pkg-config --libs geany gtk+-3.0
@@ -41,19 +42,24 @@ jobs:
         run: |
           set -eux
           make
-          file ai_chat.so || true
+          file ai_chat.so
           ls -lh ai_chat.so
 
       - name: Prepare assets
+        shell: bash
         run: |
           set -eux
           NAME="ai_chat-${{ github.ref_name }}-ubuntu-gsv${{ env.GSV }}"
           mkdir -p release
           cp -v ai_chat.so release/
-          # Package a zip for convenience
+          # Optional docs into the zip (if present)
           cp -v README.md LICENSE || true
-          (cd release &&             cp -v ../README.md ../LICENSE . 2>/dev/null || true &&             zip -r "../${NAME}.zip" .)
+          (cd release &&             cp -v ../README.md ../LICENSE . 2>/dev/null || true &&             zip -r "${NAME}.zip" .)
           sha256sum release/ai_chat.so > "release/${NAME}.sha256"
+          echo "== List release dir =="
+          ls -la release
+          echo "== Ensure zip exists =="
+          test -f "release/${NAME}.zip"
 
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
