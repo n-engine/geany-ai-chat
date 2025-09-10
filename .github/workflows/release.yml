@@ -22,8 +22,7 @@ jobs:
         run: |
           set -eux
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libcurl4-openssl-dev libgeany-dev 
-          # Prefer GtkSourceView 3; if unavailable, use 4 and patch Makefile.
+          sudo apt-get install -y build-essential pkg-config geany libgtk-3-dev libcurl4-openssl-dev libjson-c-dev
           if sudo apt-get install -y libgtksourceview-3.0-dev ; then
             echo "GSV=3" >> $GITHUB_ENV
           else
@@ -31,6 +30,12 @@ jobs:
             sed -i 's/gtksourceview-3.0/gtksourceview-4/g' Makefile || true
             echo "GSV=4" >> $GITHUB_ENV
           fi
+
+      - name: Verify pkg-config modules
+        run: |
+          pkg-config --modversion geany
+          pkg-config --cflags geany gtk+-3.0
+          pkg-config --libs geany gtk+-3.0
 
       - name: Build
         run: |
