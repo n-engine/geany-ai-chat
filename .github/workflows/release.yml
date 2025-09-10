@@ -22,7 +22,7 @@ jobs:
         run: |
           set -eux
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config geany libgtk-3-dev libcurl4-openssl-dev libjson-c-dev
+          sudo apt-get install -y build-essential pkg-config geany libgtk-3-dev libcurl4-openssl-dev libjson-c-dev zip
           if sudo apt-get install -y libgtksourceview-3.0-dev ; then
             echo "GSV=3" >> $GITHUB_ENV
           else
@@ -53,7 +53,7 @@ jobs:
           # Package a zip for convenience
           cp -v README.md LICENSE || true
           (cd release &&             cp -v ../README.md ../LICENSE . 2>/dev/null || true &&             zip -r "../${NAME}.zip" .)
-          sha256sum ai_chat.so > "release/${NAME}.sha256"
+          sha256sum release/ai_chat.so > "release/${NAME}.sha256"
 
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
