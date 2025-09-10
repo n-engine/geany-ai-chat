@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'   # e.g. v1.0.0, v0.9.1, v2.0.0-rc1
+
+permissions:
+  contents: write   # required to create releases & upload assets
+
+jobs:
+  build-and-release:
+    name: Build plugin and publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libcurl4-openssl-dev libgeany-dev || true
+          # Prefer GtkSourceView 3; if unavailable, use 4 and patch Makefile.
+          if sudo apt-get install -y libgtksourceview-3.0-dev ; then
+            echo "GSV=3" >> $GITHUB_ENV
+          else
+            sudo apt-get install -y libgtksourceview-4-dev
+            sed -i 's/gtksourceview-3.0/gtksourceview-4/g' Makefile || true
+            echo "GSV=4" >> $GITHUB_ENV
+          fi
+
+      - name: Build
+        run: |
+          set -eux
+          make
+          file ai_chat.so || true
+          ls -lh ai_chat.so
+
+      - name: Prepare assets
+        run: |
+          set -eux
+          NAME="ai_chat-${{ github.ref_name }}-ubuntu-gsv${{ env.GSV }}"
+          mkdir -p release
+          cp -v ai_chat.so release/
+          # Package a zip for convenience
+          cp -v README.md LICENSE || true
+          (cd release &&             cp -v ../README.md ../LICENSE . 2>/dev/null || true &&             zip -r "../${NAME}.zip" .)
+          sha256sum ai_chat.so > "release/${NAME}.sha256"
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.zip
+            release/*.sha256
+            release/ai_chat.so
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
