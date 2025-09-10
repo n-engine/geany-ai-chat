@@ -1,7 +1,7 @@
 ![CI](https://github.com/n-engine/geany-ai-chat/actions/workflows/ci.yml/badge.svg?branch=main)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Release](https://img.shields.io/github/v/release/n-engine/geany-ai-chat?display_name=tag)
-![Geany AI Chat](screenshot.png)
+![Geany AI Chat](docs/screenshot.png)
 
 # AI Chat (Geany Plugin)
 
