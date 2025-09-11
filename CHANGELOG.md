@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [1.1.0] - 2025-09-12
+### Added
 - Clickable links in messages (Markdown `[text](url)` and plain URLs).
 - Styled blockquotes (`>`): visual left rule + wrapped text.
 - Heuristic language detection for unlabeled code fences.

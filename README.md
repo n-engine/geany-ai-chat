@@ -111,7 +111,11 @@ It keeps: backend, base URL, model, temperature, streaming flag, API key, dark t
 ---
 
 ### 🗺️ Roadmap
-- Optional light/dark theming toggle  
+- Network timeout preference and proxy settings  
+- Export conversation as Markdown / plain text  
+- Per-backend presets (URL/model/temp) with quick switch  
+- Link hover style + spacing and paragraph margins  
+- Keyboard shortcuts customization (send, stop, copy all)  
 
 ---
 
