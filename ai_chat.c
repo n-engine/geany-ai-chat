@@ -1,12 +1,12 @@
 /*
- * ai_chat_pro_modern.c — Geany plugin (geany_load_module API)
+ * ai_chat.c — Geany plugin (geany_load_module API)
  * Chat IA: streaming, sélection éditeur, Stop,
  * GtkSourceView pour code blocks, sans trampolines GCC (no execstack)
  *
  * Build (GtkSourceView 3.x) :
  *   gcc -fPIC -shared -O2 -Wall -Wextra \
  *     $(pkg-config --cflags geany gtk+-3.0 gtksourceview-3.0) \
- *     -o ai_chat.so ai_chat_pro_modern.c \
+ *     -o ai_chat.so ai_chat.c \
  *     $(pkg-config --libs geany gtk+-3.0 gtksourceview-3.0) \
  *     -lcurl -lgthread-2.0 -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now
  */
@@ -18,6 +18,8 @@
 #include <glib.h>
 #include <string.h>
 #include <stdlib.h>
+
+#include <geany/document.h>
 
 static GeanyPlugin *g_plugin = NULL;
 
@@ -123,6 +125,7 @@ typedef struct
     GtkWidget    *root_box;
 
     GtkWidget    *msg_list;      /* GtkListBox des bulles de messages */
+    GtkWidget    *scroll;        /* Scrolled window pour autoscroll */
 
     GtkWidget    *input_view;
     GtkTextBuffer*input_buf;
@@ -146,6 +149,330 @@ typedef struct
 } Ui;
 
 static Ui ui;
+
+
+/* ---------- Clickable links (labels with Pango <a href=...>) ---------- */
+/* Convert plaintext + Markdown [label](url) + bare URLs into Pango markup with <a>. */
+/* No linkification inside triple-backtick code fences. */
+
+static gboolean
+on_label_activate_link(GtkLabel *label, const gchar *uri, gpointer user_data)
+{
+    (void)user_data;
+    GError *err = NULL;
+
+    GtkWidget *toplevel = gtk_widget_get_toplevel(GTK_WIDGET(label));
+    if (!GTK_IS_WINDOW(toplevel))
+        toplevel = NULL;
+
+    gtk_show_uri_on_window(GTK_WINDOW(toplevel), uri, GDK_CURRENT_TIME, &err);
+    if (err)
+    {
+        g_warning("AI Chat: open link failed: %s", err->message);
+        g_clear_error(&err);
+    }
+    return TRUE; /* handled — do not propagate to Geany handlers */
+}
+
+static inline gboolean
+is_url_char(gunichar c)
+{
+    if (g_unichar_isalnum(c)) return TRUE;
+    switch (c)
+    {
+        case '/': case ':': case '?': case '#': case '&': case '=':
+        case '%': case '.': case '-': case '_': case '+': case '~':
+        case '@': case '!': case '*': case '\'': case '(': case ')':
+            return TRUE;
+        default: return FALSE;
+    }
+}
+
+static void
+append_escaped(GString *out, const gchar *s, gssize len)
+{
+    if (len < 0) len = (gssize)strlen(s);
+    gchar *esc = g_markup_escape_text(s, (gssize)len);
+    g_string_append(out, esc);
+    g_free(esc);
+}
+
+static gchar*
+mk_markup_with_links(const gchar *src)
+{
+    if (!src) return g_strdup("");
+    const gchar *p = src;
+    GString *out = g_string_new(NULL);
+    GString *plain = g_string_new(NULL);
+    gboolean in_fence = FALSE;
+
+    while (*p)
+    {
+        if (!in_fence && p[0]=='`' && p[1]=='`' && p[2]=='`')
+        {
+            if (plain->len) { append_escaped(out, plain->str, plain->len); g_string_set_size(plain, 0); }
+            in_fence = TRUE;
+            const gchar *q = strstr(p+3, "```");
+            if (!q) { append_escaped(out, p, -1); break; }
+            append_escaped(out, p, (q+3)-p);
+            p = q+3;
+            in_fence = FALSE;
+            continue;
+        }
+
+        if (!in_fence && *p == '[')
+        {
+            const gchar *lb = p + 1;
+            const gchar *rb = NULL;
+            for (const gchar *t = lb; *t; ++t)
+            {
+                if (*t == '\\' && t[1]) { ++t; continue; }
+                if (*t == ']') { rb = t; break; }
+                if (*t == '\n') break;
+            }
+            if (rb && rb[1] == '(')
+            {
+                const gchar *ub = NULL;
+                const gchar *u = rb + 2;
+                if (u[0] != 0)
+                {
+                    for (const gchar *t = u; *t; ++t)
+                    {
+                        if (*t == '\\' && t[1]) { ++t; continue; }
+                        if (*t == ')') { ub = t; break; }
+                        if (*t == '\n') break;
+                    }
+                }
+                if (ub && ub > u)
+                {
+                    if (plain->len) { append_escaped(out, plain->str, plain->len); g_string_set_size(plain, 0); }
+
+                    gchar *label = g_strndup(lb, rb - lb);
+                    gchar *url   = g_strndup(u,  ub - u);
+
+                    if (g_str_has_prefix(url, "www."))
+                    {
+                        gchar *tmp = g_strconcat("https://", url, NULL);
+                        g_free(url);
+                        url = tmp;
+                    }
+
+                    gchar *url_esc = g_markup_escape_text(url, -1);
+                    g_string_append_printf(out, "<a href=\"%s\">", url_esc);
+                    g_free(url_esc);
+
+                    append_escaped(out, label, -1);
+                    g_string_append(out, "</a>");
+
+                    g_free(label);
+                    g_free(url);
+
+                    p = ub + 1;
+                    continue;
+                }
+            }
+        }
+
+        if (!in_fence && (g_str_has_prefix(p, "http://") || g_str_has_prefix(p, "https://") || g_str_has_prefix(p, "www.")))
+        {
+            const gchar *q = p;
+            while (*q)
+            {
+                gunichar ch = g_utf8_get_char(q);
+                if (!is_url_char(ch)) break;
+                q = g_utf8_next_char(q);
+            }
+            while (q > p && strchr(").,;:!?", (unsigned char)q[-1]) != NULL)
+                q--;
+
+            if (plain->len) { append_escaped(out, plain->str, plain->len); g_string_set_size(plain, 0); }
+
+            gchar *disp = g_strndup(p, q - p);
+            gchar *href;
+            if (g_str_has_prefix(disp, "www."))
+                href = g_strconcat("https://", disp, NULL);
+            else
+                href = g_strdup(disp);
+
+            gchar *href_esc = g_markup_escape_text(href, -1);
+            g_string_append_printf(out, "<a href=\"%s\">", href_esc);
+            g_free(href_esc);
+
+            append_escaped(out, disp, -1);
+            g_string_append(out, "</a>");
+
+            g_free(disp);
+            g_free(href);
+
+            p = q;
+            continue;
+        }
+
+        plain = g_string_append_c(plain, *p);
+        p++;
+    }
+
+    if (plain->len) { append_escaped(out, plain->str, plain->len); }
+
+    g_string_free(plain, TRUE);
+    return g_string_free(out, FALSE);
+}
+
+
+
+/* ---------- Clickable links support ---------- */
+
+typedef struct
+{
+    GtkTextBuffer *buffer;
+    GtkTextIter start;
+    GtkTextIter end;
+    gchar *url;
+} LinkTagCtx;
+
+static gboolean
+open_link_cb(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
+{
+    if (event->type != GDK_BUTTON_RELEASE || event->button != 1)
+        return FALSE;
+
+    GtkTextIter iter;
+    GtkTextBuffer *buffer =
+        gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget));
+    gint x, y;
+    gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(widget),
+                                          GTK_TEXT_WINDOW_WIDGET,
+                                          (gint) event->x,
+                                          (gint) event->y, &x, &y);
+    gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(widget), &iter, x, y);
+
+    GSList *tags = gtk_text_iter_get_tags(&iter);
+    for (GSList *l = tags; l != NULL; l = l->next)
+    {
+        GtkTextTag *tag = l->data;
+        const gchar *url = g_object_get_data(G_OBJECT(tag), "url");
+        if (url)
+        {
+            GError *err = NULL;
+            gtk_show_uri_on_window(GTK_WINDOW(ui.window),
+                                   url,
+                                   GDK_CURRENT_TIME,
+                                   &err);
+            if (err)
+            {
+                g_warning("Failed to open link: %s", err->message);
+                g_clear_error(&err);
+            }
+            g_slist_free(tags);
+            return TRUE; /* stop event propagation */
+        }
+    }
+    g_slist_free(tags);
+    return FALSE;
+}
+
+static gboolean
+motion_notify_cb(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
+{
+    GtkTextIter iter;
+    GtkTextBuffer *buffer =
+        gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget));
+    gint x, y;
+    gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(widget),
+                                          GTK_TEXT_WINDOW_WIDGET,
+                                          (gint) event->x,
+                                          (gint) event->y, &x, &y);
+    gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(widget), &iter, x, y);
+
+    gboolean over_link = FALSE;
+    GSList *tags = gtk_text_iter_get_tags(&iter);
+    for (GSList *l = tags; l != NULL; l = l->next)
+    {
+        GtkTextTag *tag = l->data;
+        if (g_object_get_data(G_OBJECT(tag), "url"))
+        {
+            over_link = TRUE;
+            break;
+        }
+    }
+    g_slist_free(tags);
+
+    GdkWindow *win = gtk_text_view_get_window(GTK_TEXT_VIEW(widget),
+                                              GTK_TEXT_WINDOW_TEXT);
+    if (win)
+    {
+        GdkCursor *cursor = gdk_cursor_new_from_name(
+            gdk_window_get_display(win),
+            over_link ? "pointer" : "text");
+        gdk_window_set_cursor(win, cursor);
+        g_clear_object(&cursor);
+    }
+
+    return FALSE;
+}
+
+static void
+apply_link_tag(GtkTextBuffer *buffer,
+               GtkTextIter *start,
+               GtkTextIter *end,
+               const gchar *url)
+{
+    static guint link_counter = 0;
+    gchar *tagname = g_strdup_printf("link-%u", link_counter++);
+    GtkTextTag *tag = gtk_text_buffer_create_tag(
+        buffer, tagname,
+        "underline", PANGO_UNDERLINE_SINGLE,
+        "foreground", "blue",
+        NULL);
+    g_object_set_data_full(G_OBJECT(tag), "url", g_strdup(url), g_free);
+    gtk_text_buffer_apply_tag(buffer, tag, start, end);
+    g_free(tagname);
+}
+
+/* very basic regex-like search for URLs */
+static void
+linkify_text(GtkTextBuffer *buffer, GtkTextIter *start, GtkTextIter *end)
+{
+    gchar *text = gtk_text_buffer_get_text(buffer, start, end, FALSE);
+    const gchar *p = text;
+    while ((p = g_strstr_len(p, -1, "http")) != NULL)
+    {
+        const gchar *q = p;
+        while (*q && !g_ascii_isspace(*q))
+            q++;
+        if (q > p + 7)
+        {
+            GtkTextIter istart, iend;
+            gtk_text_buffer_get_iter_at_offset(buffer, &istart,
+                                               gtk_text_iter_get_offset(start) +
+                                                   (p - text));
+            gtk_text_buffer_get_iter_at_offset(buffer, &iend,
+                                               gtk_text_iter_get_offset(start) +
+                                                   (q - text));
+            gchar *url = g_strndup(p, q - p);
+            apply_link_tag(buffer, &istart, &iend, url);
+            g_free(url);
+        }
+        p = q;
+    }
+    g_free(text);
+}
+
+/* Autoscroll to bottom of message list */
+static gboolean autoscroll_idle_cb(gpointer data)
+{
+    (void)data;
+    if (!ui.scroll) return FALSE;
+    GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(ui.scroll));
+    if (!vadj) return FALSE;
+    gdouble max = gtk_adjustment_get_upper(vadj) - gtk_adjustment_get_page_size(vadj);
+    if (max < 0) max = 0;
+    gtk_adjustment_set_value(vadj, max);
+    return FALSE;
+}
+
+static void autoscroll_soon(void) { g_idle_add(autoscroll_idle_cb, NULL); }
+
 
 static void copy_text_to_clipboard(const gchar *txt)
 {
@@ -172,7 +499,13 @@ static void add_user_row(const gchar *text)
     g_free(markup);
     gtk_label_set_xalign(GTK_LABEL(hdr), 0.0);
 
-    GtkWidget *lbl = gtk_label_new(text);
+    GtkWidget *lbl = gtk_label_new(NULL);
+            gchar *markup_txt = mk_markup_with_links(text);
+            gtk_label_set_markup(GTK_LABEL(lbl), markup_txt);
+            g_free(markup_txt);
+            gtk_label_set_use_markup(GTK_LABEL(lbl), TRUE);
+            gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
+            g_signal_connect(lbl, "activate-link", G_CALLBACK(on_label_activate_link), NULL);
     gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
     gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
     gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
@@ -182,6 +515,8 @@ static void add_user_row(const gchar *text)
 
     gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
     gtk_widget_show_all(row);
+    autoscroll_soon();
+    autoscroll_soon();
 }
 
 /* Forward decl */
@@ -207,6 +542,7 @@ typedef struct Req
     GString *accum;
 } Req;
 
+
 static GtkWidget* add_assistant_stream_row(Req *req)
 {
     GtkWidget *row = make_row_container();
@@ -229,6 +565,8 @@ static GtkWidget* add_assistant_stream_row(Req *req)
 
     gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
     gtk_widget_show_all(row);
+    autoscroll_soon();
+    autoscroll_soon();
 
     req->row = row;
     req->stream_view = tv;
@@ -237,6 +575,28 @@ static GtkWidget* add_assistant_stream_row(Req *req)
 }
 
 /* ----------- Code blocks (GtkSourceView) -------------------------------- */
+
+
+static void insert_code_into_editor(GtkButton *b, gpointer data)
+{
+    GtkTextBuffer *tb = GTK_TEXT_BUFFER(data);
+    GtkTextIter a, z;
+    gtk_text_buffer_get_bounds(tb, &a, &z);
+    gchar *txt = gtk_text_buffer_get_text(tb, &a, &z, FALSE);
+
+    GeanyDocument *doc = document_get_current();
+    if (doc && doc->editor && doc->editor->sci && txt)
+    {
+        ScintillaObject *sci = doc->editor->sci;
+        if (sci_has_selection(sci))
+            sci_replace_sel(sci, txt);
+        else
+            sci_insert_text(sci, sci_get_current_position(sci), txt);
+
+        document_grab_focus(doc, TRUE, TRUE);
+    }
+    g_free(txt);
+}
 
 static void copy_code_clicked(GtkButton *b, gpointer data)
 {
@@ -265,9 +625,11 @@ static GtkWidget* create_code_block_widget(const gchar *code, const gchar *lang_
     GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     GtkWidget *lab = gtk_label_new(lang_hint && *lang_hint ? lang_hint : "code");
     gtk_label_set_xalign(GTK_LABEL(lab), 0.0);
-    GtkWidget *btn = gtk_button_new_with_label("Copier");
+    GtkWidget *btn_copy = gtk_button_new_with_label("Copier");
+    GtkWidget *btn_ins  = gtk_button_new_with_label("Insérer dans l'éditeur");
     gtk_box_pack_start(GTK_BOX(bar), lab, TRUE, TRUE, 0);
-    gtk_box_pack_end(GTK_BOX(bar), btn, FALSE, FALSE, 0);
+    gtk_box_pack_end(GTK_BOX(bar), btn_ins, FALSE, FALSE, 0);
+    gtk_box_pack_end(GTK_BOX(bar), btn_copy, FALSE, FALSE, 0);
 
     GtkSourceLanguageManager *lm = gtk_source_language_manager_get_default();
     GtkSourceStyleScheme *scheme = suggested_scheme();
@@ -297,10 +659,15 @@ static GtkWidget* create_code_block_widget(const gchar *code, const gchar *lang_
     if (scheme)
         gtk_source_buffer_set_style_scheme(GTK_SOURCE_BUFFER(sbuf), scheme);
 
-    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sbuf), code ? code : "", -1);
+    /* Trim trailing newlines */
+gchar *code_clean = g_strdup(code ? code : "");
+g_strchomp(code_clean);
+gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sbuf), code_clean, -1);
+g_free(code_clean);
     gtk_text_view_set_buffer(GTK_TEXT_VIEW(view), sbuf);
 
-    g_signal_connect(btn, "clicked", G_CALLBACK(copy_code_clicked), sbuf);
+    g_signal_connect(btn_copy, "clicked", G_CALLBACK(copy_code_clicked), sbuf);
+    g_signal_connect(btn_ins,  "clicked", G_CALLBACK(insert_code_into_editor), sbuf);
 
     gtk_box_pack_start(GTK_BOX(box), bar, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(box), view, FALSE, FALSE, 0);
@@ -326,7 +693,13 @@ static GtkWidget* build_assistant_composite_from_markdown(const gchar *text)
         {
             if (*p)
             {
-                GtkWidget *lbl = gtk_label_new(p);
+                GtkWidget *lbl = gtk_label_new(NULL);
+            gchar *markup_txt = mk_markup_with_links(p);
+            gtk_label_set_markup(GTK_LABEL(lbl), markup_txt);
+            g_free(markup_txt);
+            gtk_label_set_use_markup(GTK_LABEL(lbl), TRUE);
+            gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
+            g_signal_connect(lbl, "activate-link", G_CALLBACK(on_label_activate_link), NULL);
                 gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
                 gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
                 gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
@@ -338,7 +711,13 @@ static GtkWidget* build_assistant_composite_from_markdown(const gchar *text)
         if (f > p)
         {
             gchar *para = g_strndup(p, f - p);
-            GtkWidget *lbl = gtk_label_new(para);
+            GtkWidget *lbl = gtk_label_new(NULL);
+            gchar *markup_txt = mk_markup_with_links(para);
+            gtk_label_set_markup(GTK_LABEL(lbl), markup_txt);
+            g_free(markup_txt);
+            gtk_label_set_use_markup(GTK_LABEL(lbl), TRUE);
+            gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
+            g_signal_connect(lbl, "activate-link", G_CALLBACK(on_label_activate_link), NULL);
             gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
             gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
             gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
@@ -372,6 +751,8 @@ static void replace_row_child(GtkWidget *row, GtkWidget *new_child)
     if (old) gtk_container_remove(GTK_CONTAINER(row), old);
     gtk_container_add(GTK_CONTAINER(row), new_child);
     gtk_widget_show_all(row);
+    autoscroll_soon();
+    autoscroll_soon();
 }
 
 /* --------------------------- Historique --------------------------------- */
@@ -448,6 +829,7 @@ static gboolean append_idle_cb(gpointer data)
         GtkTextIter it;
         gtk_text_buffer_get_end_iter(ctx->buf, &it);
         gtk_text_buffer_insert(ctx->buf, &it, ctx->text, -1);
+        autoscroll_soon();
     }
     g_free(ctx->text);
     g_free(ctx);
@@ -926,6 +1308,8 @@ static void on_send_selection(GtkButton *b, gpointer u)
         gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
         gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
         gtk_widget_show_all(row);
+    autoscroll_soon();
+    autoscroll_soon();
         return;
     }
     ScintillaObject *sci = doc->editor->sci;
@@ -937,6 +1321,8 @@ static void on_send_selection(GtkButton *b, gpointer u)
         gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
         gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
         gtk_widget_show_all(row);
+    autoscroll_soon();
+    autoscroll_soon();
         return;
     }
     gchar *sel = sci_get_selection_contents(sci);
@@ -1005,6 +1391,8 @@ static void on_reset(GtkButton *b, gpointer u)
     gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
     gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
     gtk_widget_show_all(row);
+    autoscroll_soon();
+    autoscroll_soon();
 }
 
 static void on_stop(GtkButton *b, gpointer u)
@@ -1072,6 +1460,7 @@ static void build_ui(void)
     gtk_box_pack_start(GTK_BOX(opts), key_box, TRUE, TRUE, 0);
 
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+    ui.scroll = scroll;
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     ui.msg_list = gtk_list_box_new();
