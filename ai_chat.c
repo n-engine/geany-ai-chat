@@ -1644,7 +1644,27 @@ static void on_copy_all(GtkButton *b, gpointer u)
                     GtkTextIter a, z;
                     gtk_text_buffer_get_bounds(tb, &a, &z);
                     gchar *ct = gtk_text_buffer_get_text(tb, &a, &z, FALSE);
-                    g_string_append(out, "```\n");
+                    const gchar *lang_hint = "";
+#ifdef GTK_SOURCE_VIEW_H
+                    if (GTK_SOURCE_IS_BUFFER(tb))
+                    {
+                        GtkSourceLanguage *sl = gtk_source_buffer_get_language(GTK_SOURCE_BUFFER(tb));
+                        if (sl)
+                        {
+                            const gchar *id = gtk_source_language_get_id(sl);
+                            if (id && *id) lang_hint = id;
+                            else
+                            {
+                                const gchar *nm = gtk_source_language_get_name(sl);
+                                if (nm && *nm) lang_hint = nm;
+                            }
+                        }
+                    }
+#endif
+                    if (lang_hint && *lang_hint)
+                        g_string_append_printf(out, "```%s\n", lang_hint);
+                    else
+                        g_string_append(out, "```\n");
                     g_string_append(out, ct);
                     g_string_append(out, "\n```\n");
                     g_free(ct);
