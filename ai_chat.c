@@ -1440,6 +1440,9 @@ static gpointer net_thread(gpointer data)
 done:
     /* Remplacer la bulle streaming par le rendu final */
     gchar *final = req->accum ? g_string_free(req->accum, FALSE) : g_strdup("");
+    /* Ajoute la réponse de l'assistant à l'historique (utile pour Ollama) */
+    if (final && *final)
+        history_add("assistant", final);
     ReplaceCtx *rc = g_new0(ReplaceCtx, 1);
     rc->row = req->row;
     rc->final_text = final;
