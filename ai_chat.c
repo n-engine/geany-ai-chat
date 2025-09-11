@@ -621,6 +621,129 @@ static GtkSourceStyleScheme* suggested_scheme(void)
     return scheme;
 }
 
+/* Heuristic language detection for unlabeled code fences */
+static const gchar* guess_lang_id(const gchar *code)
+{
+    if (!code) return NULL;
+    /* limit scanning to first ~2000 bytes for speed */
+    const gchar *p = code;
+    gsize scanned = 0;
+
+    /* Skip leading whitespace */
+    while (*p && g_ascii_isspace(*p)) p++, scanned++;
+
+    /* Shebang */
+    if (g_str_has_prefix(p, "#!"))
+    {
+        if (strstr(p, "python")) return "python";
+        if (strstr(p, "bash") || strstr(p, "sh")) return "sh";
+        if (strstr(p, "node")) return "javascript";
+        if (strstr(p, "perl")) return "perl";
+        if (strstr(p, "ruby")) return "ruby";
+    }
+
+    /* XML / HTML / PHP */
+    if (g_str_has_prefix(p, "<?xml")) return "xml";
+    if (g_str_has_prefix(p, "<?php") || strstr(p, "<?php")) return "php";
+    if (g_str_has_prefix(p, "<!DOCTYPE html") || g_str_has_prefix(p, "<html") || strstr(p, "</html>")) return "html";
+    if (g_str_has_prefix(p, "<svg")) return "xml";
+
+    /* JSON: starts with { or [ and has quotes/colon pairs */
+    if (*p == '{' || *p == '[')
+    {
+        const gchar *q = p;
+        int quotes = 0, colons = 0;
+        for (; *q && scanned < 2000; ++q, ++scanned)
+        {
+            if (*q == '"') quotes++;
+            else if (*q == ':') colons++;
+            else if (*q == '\n') break;
+        }
+        if (quotes >= 2 && colons >= 1)
+            return "json";
+    }
+
+    /* SQL */
+    if (g_strrstr_len(p, 2000, "SELECT ") || g_strrstr_len(p, 2000, "INSERT INTO") ||
+        g_strrstr_len(p, 2000, "CREATE TABLE") || g_strrstr_len(p, 2000, "UPDATE ") ||
+        g_strrstr_len(p, 2000, "DELETE FROM"))
+        return "sql";
+
+    /* Go */
+    if (g_strrstr_len(p, 2000, "package main") || g_strrstr_len(p, 2000, "func main("))
+        return "go";
+
+    /* Rust */
+    if (g_strrstr_len(p, 2000, "fn main()") || g_strrstr_len(p, 2000, "println!(") ||
+        g_strrstr_len(p, 2000, "let mut "))
+        return "rust";
+
+    /* Java */
+    if (g_strrstr_len(p, 2000, "public class ") || g_strrstr_len(p, 2000, "System.out.println") ||
+        g_strrstr_len(p, 2000, "import java."))
+        return "java";
+
+    /* C# */
+    if (g_strrstr_len(p, 2000, "using System;") && g_strrstr_len(p, 2000, "namespace "))
+        return "c-sharp";
+
+    /* Python */
+    if (g_strrstr_len(p, 2000, "def ") || g_strrstr_len(p, 2000, "import ") ||
+        g_strrstr_len(p, 2000, "print("))
+        return "python";
+
+    /* JavaScript / TypeScript */
+    if (g_strrstr_len(p, 2000, "console.log") || g_strrstr_len(p, 2000, "function ") ||
+        g_strrstr_len(p, 2000, "=>") || g_strrstr_len(p, 2000, "import ") ||
+        g_strrstr_len(p, 2000, "export "))
+        return "javascript";
+
+    /* Shell */
+    if (g_strrstr_len(p, 2000, "#!/bin/sh") || g_strrstr_len(p, 2000, "#!/bin/bash") ||
+        g_strrstr_len(p, 2000, "export ") || g_strrstr_len(p, 2000, "sudo ") ||
+        g_strrstr_len(p, 2000, "apt ") || g_strrstr_len(p, 2000, "yum ") ||
+        g_strrstr_len(p, 2000, "echo "))
+        return "sh";
+
+    /* CSS */
+    if (g_strrstr_len(p, 2000, ": ") && g_strrstr_len(p, 2000, "{") && g_strrstr_len(p, 2000, "}"))
+    {
+        if (g_strrstr_len(p, 2000, "color:") || g_strrstr_len(p, 2000, "font-") || g_strrstr_len(p, 2000, "margin:"))
+            return "css";
+    }
+
+    /* YAML */
+    if (g_strrstr_len(p, 2000, ": ") && g_strrstr_len(p, 2000, "\n-") && !g_strrstr_len(p, 2000, "{"))
+        return "yaml";
+
+    /* TOML */
+    if (g_str_has_prefix(p, "[") && g_strrstr_len(p, 2000, "]") && g_strrstr_len(p, 2000, " = "))
+        return "toml";
+
+    /* Dockerfile */
+    if (g_str_has_prefix(p, "FROM ") || g_str_has_prefix(p, "RUN ") || g_str_has_prefix(p, "CMD "))
+        return "docker";
+
+    /* Lua */
+    if (g_strrstr_len(p, 2000, "function ") && g_strrstr_len(p, 2000, " end") )
+        return "lua";
+
+    /* PHP already handled above */
+
+    /* C / C++: includes / main */
+    if (g_strrstr_len(p, 2000, "#include "))
+    {
+        if (g_strrstr_len(p, 2000, "<iostream>") || g_strrstr_len(p, 2000, "std::") || g_strrstr_len(p, 2000, "using namespace "))
+            return "cpp";
+        return "c";
+    }
+    if (g_strrstr_len(p, 2000, "int main(") || g_strrstr_len(p, 2000, "printf("))
+        return "c";
+
+    /* Fallbacks */
+    return NULL;
+}
+
 static GtkWidget* create_code_block_widget(const gchar *code, const gchar *lang_hint)
 {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
@@ -657,6 +780,12 @@ static GtkWidget* create_code_block_widget(const gchar *code, const gchar *lang_
     gtk_text_view_set_left_margin(GTK_TEXT_VIEW(view), 8);
     gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view), 8);
 
+    if (!lang)
+    {
+        const gchar *id = guess_lang_id(code);
+        if (id)
+            lang = gtk_source_language_manager_get_language(lm, id);
+    }
     if (lang)
         gtk_source_buffer_set_language(GTK_SOURCE_BUFFER(sbuf), lang);
     if (scheme)
