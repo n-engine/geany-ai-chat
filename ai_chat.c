@@ -36,6 +36,7 @@ typedef struct
     gchar   *api_key;
     gboolean streaming;
     gboolean dark_theme;
+    gchar   *system_prompt;
 } AiPrefs;
 
 static AiPrefs prefs;
@@ -50,6 +51,7 @@ static void prefs_set_defaults(void)
     prefs.api_key     = g_strdup("");
     prefs.streaming   = TRUE;
     prefs.dark_theme  = FALSE;
+    prefs.system_prompt = g_strdup("");
 }
 
 static void prefs_free(void)
@@ -57,6 +59,7 @@ static void prefs_free(void)
     g_clear_pointer(&prefs.base_url, g_free);
     g_clear_pointer(&prefs.model,    g_free);
     g_clear_pointer(&prefs.api_key,  g_free);
+    g_clear_pointer(&prefs.system_prompt, g_free);
 }
 
 static void prefs_load(void)
@@ -102,6 +105,10 @@ static void prefs_load(void)
     else
         prefs.dark_theme = FALSE;
 
+    g_free(prefs.system_prompt);
+    prefs.system_prompt = g_key_file_get_string(kf, "chat", "system_prompt", NULL);
+    if (!prefs.system_prompt) prefs.system_prompt = g_strdup("");
+
     g_key_file_free(kf);
 }
 
@@ -118,6 +125,7 @@ static void prefs_save(void)
     g_key_file_set_string(kf,  "chat", "api_key",  prefs.api_key);
     g_key_file_set_boolean(kf, "chat", "streaming", prefs.streaming);
     g_key_file_set_boolean(kf, "chat", "dark_theme", prefs.dark_theme);
+    g_key_file_set_string(kf,  "chat", "system_prompt", prefs.system_prompt);
 
     txt = g_key_file_to_data(kf, &len, NULL);
     g_mkdir_with_parents(g_path_get_dirname(conf_path), 0700);
@@ -153,6 +161,7 @@ typedef struct
     GtkWidget    *chk_stream;
     GtkWidget    *chk_dark;
     GtkWidget    *btn_emoji;
+    GtkWidget    *btn_ctx;
 
     gboolean      busy;
 } Ui;
@@ -1038,10 +1047,15 @@ static gchar *json_escape(const gchar *s)
     return g_string_free(g, FALSE);
 }
 
+/* Forward decl for use in history_init */
+static void history_add(const gchar *role, const gchar *content);
+
 static void history_init(void)
 {
     g_free(history_json);
     history_json = g_strdup("[]");
+    if (prefs.system_prompt && *prefs.system_prompt)
+        history_add("system", prefs.system_prompt);
 }
 
 static void history_add(const gchar *role, const gchar *content)
@@ -1371,13 +1385,20 @@ static gpointer net_thread(gpointer data)
     else
     {
         url = g_strdup_printf("%s/v1/chat/completions", req->base);
-        gchar *esc = json_escape(req->prompt);
-        payload = g_strdup_printf("{\"model\":\"%s\",\"messages\":[{\"role\":\"user\","
-                                  "\"content\":\"%s\"}],\"temperature\":%.3f,"
-                                  "\"stream\":%s}",
-                                  req->model, esc, req->temp,
-                                  req->streaming ? "true" : "false");
-        g_free(esc);
+        gchar *esc_user = json_escape(req->prompt);
+        gchar *esc_sys = NULL;
+        gboolean has_sys = (prefs.system_prompt && *prefs.system_prompt);
+        if (has_sys) esc_sys = json_escape(prefs.system_prompt);
+        if (has_sys)
+            payload = g_strdup_printf("{\"model\":\"%s\",\"messages\":[{\"role\":\"system\",\"content\":\"%s\"},{\"role\":\"user\",\"content\":\"%s\"}],\"temperature\":%.3f,\"stream\":%s}",
+                                      req->model, esc_sys, esc_user, req->temp,
+                                      req->streaming ? "true" : "false");
+        else
+            payload = g_strdup_printf("{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}],\"temperature\":%.3f,\"stream\":%s}",
+                                      req->model, esc_user, req->temp,
+                                      req->streaming ? "true" : "false");
+        g_free(esc_user);
+        g_free(esc_sys);
         hdr = curl_slist_append(hdr, "Content-Type: application/json");
         if (req->api_key && *req->api_key)
         {
@@ -1410,7 +1431,12 @@ static gpointer net_thread(gpointer data)
         if (rc == CURLE_ABORTED_BY_CALLBACK)
             ui_stream_append_req(req, "\n[Annulé]\n", -1);
         else if (rc != CURLE_OK)
-            ui_stream_append_req(req, "\n[Erreur] streaming\n", -1);
+        {
+            long code = 0; curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+            gchar *msg = g_strdup_printf("\n[Erreur] streaming: %s (HTTP %ld)\n", curl_easy_strerror(rc), code);
+            ui_stream_append_req(req, msg, -1);
+            g_free(msg);
+        }
     }
     else
     {
@@ -1421,9 +1447,21 @@ static gpointer net_thread(gpointer data)
         if (rc == CURLE_ABORTED_BY_CALLBACK)
             ui_stream_append_req(req, "\n[Annulé]\n", -1);
         else if (rc != CURLE_OK)
-            ui_stream_append_req(req, "\n[Erreur] requête\n", -1);
+        {
+            long code = 0; curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+            gchar *msg = g_strdup_printf("\n[Erreur] requête: %s (HTTP %ld)\n", curl_easy_strerror(rc), code);
+            ui_stream_append_req(req, msg, -1);
+            g_free(msg);
+        }
         else if (mem.data && mem.size)
         {
+            long code = 0; curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+            if (code >= 300)
+            {
+                gchar *msg = g_strdup_printf("\n[Erreur] HTTP %ld\n", code);
+                ui_stream_append_req(req, msg, -1);
+                g_free(msg);
+            }
             extract_content_and_append(mem.data, mem.size, req);
         }
         g_free(mem.data);
@@ -1692,6 +1730,51 @@ static void on_reset(GtkButton *b, gpointer u)
     autoscroll_soon();
 }
 
+static void add_info_row(const gchar *text)
+{
+    GtkWidget *row = make_row_container();
+    GtkWidget *outer = gtk_bin_get_child(GTK_BIN(row));
+    GtkWidget *lbl = gtk_label_new(text);
+    gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
+    gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
+    gtk_widget_show_all(row);
+    autoscroll_soon();
+}
+
+static void on_context_clicked(GtkButton *b, gpointer u)
+{
+    (void)b; (void)u;
+    GtkWidget *dlg = gtk_dialog_new_with_buttons("Contexte système",
+                        GTK_WINDOW(gtk_widget_get_toplevel(ui.root_box)),
+                        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+                        "Annuler", GTK_RESPONSE_CANCEL,
+                        "Enregistrer", GTK_RESPONSE_OK,
+                        NULL);
+    GtkWidget *area = gtk_dialog_get_content_area(GTK_DIALOG(dlg));
+    GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(sw), 160);
+    GtkWidget *tv = gtk_text_view_new();
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(tv), GTK_WRAP_WORD_CHAR);
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(tv));
+    gtk_text_buffer_set_text(buf, prefs.system_prompt ? prefs.system_prompt : "", -1);
+    gtk_container_add(GTK_CONTAINER(sw), tv);
+    gtk_box_pack_start(GTK_BOX(area), sw, TRUE, TRUE, 0);
+    gtk_widget_show_all(dlg);
+
+    if (gtk_dialog_run(GTK_DIALOG(dlg)) == GTK_RESPONSE_OK)
+    {
+        GtkTextIter a, z;
+        gtk_text_buffer_get_bounds(buf, &a, &z);
+        gchar *txt = gtk_text_buffer_get_text(buf, &a, &z, FALSE);
+        g_free(prefs.system_prompt);
+        prefs.system_prompt = txt; /* take ownership */
+        prefs_save();
+        history_init();
+        add_info_row("[Contexte système mis à jour]");
+    }
+    gtk_widget_destroy(dlg);
+}
+
 static void on_stop(GtkButton *b, gpointer u)
 {
     (void)b; (void)u;
@@ -1751,6 +1834,8 @@ static void build_ui(void)
     ui.chk_dark = gtk_check_button_new_with_label("Sombre");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui.chk_dark), prefs.dark_theme);
     g_signal_connect(ui.chk_dark, "toggled", G_CALLBACK(on_toggle_dark), NULL);
+    ui.btn_ctx = gtk_button_new_with_label("Contexte…");
+    g_signal_connect(ui.btn_ctx, "clicked", G_CALLBACK(on_context_clicked), NULL);
 
     GtkWidget *key_box = make_labeled_entry("Clé", &ui.ent_key);
     gtk_entry_set_text(GTK_ENTRY(ui.ent_key), prefs.api_key);
@@ -1761,6 +1846,7 @@ static void build_ui(void)
     gtk_box_pack_start(GTK_BOX(opts), temp_box, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(opts), ui.chk_stream, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(opts), ui.chk_dark, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(opts), ui.btn_ctx, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(opts), key_box, TRUE, TRUE, 0);
 
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
@@ -1799,6 +1885,10 @@ static void build_ui(void)
     g_signal_connect(ui.btn_clear,    "clicked", G_CALLBACK(on_clear), NULL);
     g_signal_connect(ui.btn_reset,    "clicked", G_CALLBACK(on_reset), NULL);
     g_signal_connect(ui.btn_copy_all, "clicked", G_CALLBACK(on_copy_all), NULL);
+
+    /* Reset history on API/model change to avoid cross-context repetition */
+    g_signal_connect(ui.cmb_api,  "changed", G_CALLBACK(on_reset), NULL);
+    g_signal_connect(ui.ent_model, "changed", G_CALLBACK(on_reset), NULL);
 
     gtk_box_pack_start(GTK_BOX(btns), ui.btn_send,     FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(btns), ui.btn_send_sel, FALSE, FALSE, 0);
