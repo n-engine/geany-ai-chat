@@ -35,6 +35,7 @@ typedef struct
     gdouble  temperature;
     gchar   *api_key;
     gboolean streaming;
+    gboolean dark_theme;
 } AiPrefs;
 
 static AiPrefs prefs;
@@ -48,6 +49,7 @@ static void prefs_set_defaults(void)
     prefs.temperature = 0.2;
     prefs.api_key     = g_strdup("");
     prefs.streaming   = TRUE;
+    prefs.dark_theme  = FALSE;
 }
 
 static void prefs_free(void)
@@ -95,6 +97,11 @@ static void prefs_load(void)
 
     prefs.streaming = g_key_file_get_boolean(kf, "chat", "streaming", NULL);
 
+    if (g_key_file_has_key(kf, "chat", "dark_theme", NULL))
+        prefs.dark_theme = g_key_file_get_boolean(kf, "chat", "dark_theme", NULL);
+    else
+        prefs.dark_theme = FALSE;
+
     g_key_file_free(kf);
 }
 
@@ -110,6 +117,7 @@ static void prefs_save(void)
     g_key_file_set_double(kf,  "chat", "temperature", prefs.temperature);
     g_key_file_set_string(kf,  "chat", "api_key",  prefs.api_key);
     g_key_file_set_boolean(kf, "chat", "streaming", prefs.streaming);
+    g_key_file_set_boolean(kf, "chat", "dark_theme", prefs.dark_theme);
 
     txt = g_key_file_to_data(kf, &len, NULL);
     g_mkdir_with_parents(g_path_get_dirname(conf_path), 0700);
@@ -143,6 +151,7 @@ typedef struct
     GtkWidget    *spin_temp;
     GtkWidget    *ent_key;
     GtkWidget    *chk_stream;
+    GtkWidget    *chk_dark;
     GtkWidget    *btn_emoji;
 
     gboolean      busy;
@@ -614,11 +623,78 @@ static void copy_code_clicked(GtkButton *b, gpointer data)
 static GtkSourceStyleScheme* suggested_scheme(void)
 {
     GtkSourceStyleSchemeManager *mgr = gtk_source_style_scheme_manager_get_default();
-    /* simple: prefer oblivion if present, else classic/tango */
-    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(mgr, "oblivion");
-    if (!scheme) scheme = gtk_source_style_scheme_manager_get_scheme(mgr, "classic");
-    if (!scheme) scheme = gtk_source_style_scheme_manager_get_scheme(mgr, "tango");
+    GtkSourceStyleScheme *scheme = NULL;
+    if (prefs.dark_theme)
+    {
+        scheme = gtk_source_style_scheme_manager_get_scheme(mgr, "oblivion");
+        if (!scheme) scheme = gtk_source_style_scheme_manager_get_scheme(mgr, "cobalt");
+    }
+    else
+    {
+        scheme = gtk_source_style_scheme_manager_get_scheme(mgr, "classic");
+        if (!scheme) scheme = gtk_source_style_scheme_manager_get_scheme(mgr, "tango");
+    }
+    if (!scheme)
+        scheme = gtk_source_style_scheme_manager_get_scheme(mgr, "kate");
     return scheme;
+}
+
+/* -------------------------- Theming (light/dark) ------------------------- */
+
+static GtkCssProvider *g_theme_provider = NULL;
+
+static void apply_theme_css(void)
+{
+    if (!g_theme_provider)
+        g_theme_provider = gtk_css_provider_new();
+
+    const gchar *css_dark =
+        ".ai-chat { background: #1e1e1e; }\n"
+        ".ai-chat label { color: #e6e6e6; }\n"
+        ".ai-chat .blockquote { border-left: 3px solid #4a4a4a; padding-left: 6px; }\n"
+        ".ai-chat .code { background: #151515; }\n";
+
+    const gchar *css_light =
+        ".ai-chat { }\n"
+        ".ai-chat .blockquote { border-left: 3px solid #c9c9c9; padding-left: 6px; }\n"
+        ".ai-chat .code { background: #f7f7f7; }\n";
+
+    const gchar *css = prefs.dark_theme ? css_dark : css_light;
+    gtk_css_provider_load_from_data(g_theme_provider, css, -1, NULL);
+
+    GdkScreen *screen = gdk_screen_get_default();
+    if (screen)
+        gtk_style_context_add_provider_for_screen(screen, GTK_STYLE_PROVIDER(g_theme_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+}
+
+static void update_code_schemes_in_widget(GtkWidget *w)
+{
+    if (!GTK_IS_WIDGET(w)) return;
+    /* Update this widget if it is a GtkSourceView */
+    if (GTK_SOURCE_IS_VIEW(w))
+    {
+        GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(w));
+        GtkSourceStyleScheme *scheme = suggested_scheme();
+        if (GTK_SOURCE_IS_BUFFER(buf))
+            gtk_source_buffer_set_style_scheme(GTK_SOURCE_BUFFER(buf), scheme);
+    }
+    /* Recurse into containers */
+    if (GTK_IS_CONTAINER(w))
+    {
+        GList *children = gtk_container_get_children(GTK_CONTAINER(w));
+        for (GList *l = children; l; l = l->next)
+            update_code_schemes_in_widget(GTK_WIDGET(l->data));
+        g_list_free(children);
+    }
+}
+
+static void on_toggle_dark(GtkToggleButton *tb, gpointer user_data)
+{
+    (void)user_data;
+    prefs.dark_theme = gtk_toggle_button_get_active(tb);
+    prefs_save();
+    apply_theme_css();
+    update_code_schemes_in_widget(ui.msg_list);
 }
 
 /* Heuristic language detection for unlabeled code fences */
@@ -772,6 +848,7 @@ static GtkWidget* create_code_block_widget(const gchar *code, const gchar *lang_
     }
 
     GtkWidget *view = gtk_source_view_new();
+    gtk_style_context_add_class(gtk_widget_get_style_context(view), "code");
     GtkTextBuffer *sbuf = gtk_text_buffer_new(NULL);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(view), FALSE);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(view), FALSE);
@@ -826,6 +903,7 @@ static GtkWidget* build_assistant_composite_from_markdown(const gchar *text)
     GtkWidget *make_blockquote(const gchar *qtext)
     {
         GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        gtk_style_context_add_class(gtk_widget_get_style_context(hbox), "blockquote");
         GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
         gtk_widget_set_margin_top(sep, 2);
         gtk_widget_set_margin_bottom(sep, 2);
@@ -1624,6 +1702,8 @@ static void build_ui(void)
     GtkWidget *nb = g_plugin->geany_data->main_widgets->message_window_notebook;
 
     ui.root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_style_context_add_class(gtk_widget_get_style_context(ui.root_box), "ai-chat");
+    apply_theme_css();
 
     GtkWidget *opts = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     ui.cmb_api = gtk_combo_box_text_new();
@@ -1647,6 +1727,9 @@ static void build_ui(void)
 
     ui.chk_stream = gtk_check_button_new_with_label("Streaming");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui.chk_stream), prefs.streaming);
+    ui.chk_dark = gtk_check_button_new_with_label("Sombre");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui.chk_dark), prefs.dark_theme);
+    g_signal_connect(ui.chk_dark, "toggled", G_CALLBACK(on_toggle_dark), NULL);
 
     GtkWidget *key_box = make_labeled_entry("Clé", &ui.ent_key);
     gtk_entry_set_text(GTK_ENTRY(ui.ent_key), prefs.api_key);
@@ -1656,6 +1739,7 @@ static void build_ui(void)
     gtk_box_pack_start(GTK_BOX(opts), model_box, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(opts), temp_box, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(opts), ui.chk_stream, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(opts), ui.chk_dark, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(opts), key_box, TRUE, TRUE, 0);
 
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
