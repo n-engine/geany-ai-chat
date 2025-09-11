@@ -1648,9 +1648,17 @@ static void on_send_selection(GtkButton *b, gpointer u)
         g_free(sel);
         return;
     }
-    send_prompt(sel);
+    /* Append selection into input box instead of sending immediately */
+    GtkTextBuffer *ib = ui.input_buf;
+    GtkTextIter end;
+    gtk_text_buffer_get_end_iter(ib, &end);
+    if (gtk_text_buffer_get_char_count(ib) > 0)
+        gtk_text_buffer_insert(ib, &end, "\n", -1);
+    gtk_text_buffer_insert(ib, &end, sel, -1);
     g_free(sel);
-}
+    /* Focus input for convenience */
+    gtk_widget_grab_focus(ui.input_view);
+    }
 
 static void on_clear(GtkButton *b, gpointer u)
 {
