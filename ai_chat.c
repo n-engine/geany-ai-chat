@@ -526,7 +526,6 @@ static void add_user_row(const gchar *text)
     gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
     gtk_widget_show_all(row);
     autoscroll_soon();
-    autoscroll_soon();
 }
 
 /* Forward decl */
@@ -575,7 +574,6 @@ static GtkWidget* add_assistant_stream_row(Req *req)
 
     gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
     gtk_widget_show_all(row);
-    autoscroll_soon();
     autoscroll_soon();
 
     req->row = row;
@@ -1020,7 +1018,6 @@ static void replace_row_child(GtkWidget *row, GtkWidget *new_child)
     if (old) gtk_container_remove(GTK_CONTAINER(row), old);
     gtk_container_add(GTK_CONTAINER(row), new_child);
     gtk_widget_show_all(row);
-    autoscroll_soon();
     autoscroll_soon();
 }
 
@@ -1503,7 +1500,8 @@ static gboolean on_input_key(GtkWidget *w, GdkEventKey *e, gpointer u)
     (void)w; (void)u;
     if (e->keyval == GDK_KEY_Return && !(e->state & GDK_SHIFT_MASK))
     {
-        g_signal_emit_by_name(ui.btn_send, "clicked");
+        if (!ui.busy)
+            g_signal_emit_by_name(ui.btn_send, "clicked");
         return TRUE;
     }
     return FALSE;
@@ -1564,6 +1562,7 @@ static void send_prompt(const gchar *prompt)
 static void on_send(GtkButton *b, gpointer u)
 {
     (void)b; (void)u;
+    if (ui.busy) return; /* ignore while streaming */
     GtkTextIter a, z;
     gtk_text_buffer_get_bounds(ui.input_buf, &a, &z);
     gchar *prompt = gtk_text_buffer_get_text(ui.input_buf, &a, &z, FALSE);
@@ -1670,7 +1669,6 @@ static void on_reset(GtkButton *b, gpointer u)
     gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
     gtk_list_box_insert(GTK_LIST_BOX(ui.msg_list), row, -1);
     gtk_widget_show_all(row);
-    autoscroll_soon();
     autoscroll_soon();
 }
 
