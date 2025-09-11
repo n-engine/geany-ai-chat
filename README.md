@@ -23,10 +23,11 @@
 - **Stop** ongoing generation
 - Markdown **```fences```** with **syntax highlighting** (GtkSourceView)
 - Per-block **Copy** and **Insert into editor**
+- **Clickable links** in messages (Markdown `[text](url)` and bare URLs)
 - **Auto-scroll** during streaming
 - Basic on-disk **preferences** (URL, model, temperature, streaming, API key)
 
-> Coming next: **clickable links** and **blockquote** styling.
+> Coming next: **blockquote** styling.
 
 ---
 
@@ -103,7 +104,6 @@ It keeps: backend, base URL, model, temperature, streaming flag, API key.
 ---
 
 ### 🗺️ Roadmap
-- Clickable links in messages  
 - Visual blockquotes (`>`)  
 - Optional light/dark theming toggle  
 - Heuristic language detection for code fences without a `lang` hint
@@ -132,10 +132,11 @@ MIT — see `LICENSE`.
 - **Stop** pour annuler la génération
 - **Blocs ```code```** avec **coloration syntaxique** (GtkSourceView)
 - Boutons par bloc : **Copier** & **Insérer dans l’éditeur**
+- **Liens cliquables** dans les messages (Markdown `[texte](url)` et URLs simples)
 - **Auto-scroll** pendant le stream
 - **Préférences** sur disque (URL, modèle, température, streaming, clé)
 
-> À venir : **liens cliquables** et **blockquote** stylés.
+> À venir : **blockquotes** stylés.
 
 ---
 
@@ -212,7 +213,6 @@ Contient : backend, URL, modèle, température, streaming, clé API.
 ---
 
 ### 🗺️ Feuille de route
-- Liens cliquables dans les messages  
 - Blockquotes (`>`) avec style  
 - Bascule clair/sombre  
 - Détection heuristique du langage quand la fence n’indique pas `lang`

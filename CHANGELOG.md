@@ -7,7 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Clickable links in messages (Markdown `[text](url)` and plain URLs).
-- Styled blockquotes (`>`).
 - GitHub Actions: CI matrix for GtkSourceView 3→4 fallback, artifacts upload.
 - GitHub Actions: tag-based Release with zipped assets and SHA256.
 
@@ -16,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - CI now installs `geany` (contains headers & geany.pc) instead of non-existent `libgeany-dev`.
+ - Open links using the widget toplevel with `gtk_show_uri_on_window` (fixes build and ensures correct parent window).
+ - After inserting code into the editor, return focus to Scintilla.
 
 ## [1.0.0] - 2025-09-10
 ### Added
