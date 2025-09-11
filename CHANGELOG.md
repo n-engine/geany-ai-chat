@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clickable links in messages (Markdown `[text](url)` and plain URLs).
 - Styled blockquotes (`>`): visual left rule + wrapped text.
 - Heuristic language detection for unlabeled code fences.
+- Light/Dark theme toggle scoped to chat pane with GtkSourceView scheme switching.
 - GitHub Actions: CI matrix for GtkSourceView 3→4 fallback, artifacts upload.
 - GitHub Actions: tag-based Release with zipped assets and SHA256.
 
