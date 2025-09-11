@@ -229,7 +229,11 @@ Contient : backend, URL, modèle, température, streaming, clé API, thème somb
 ---
 
 ### 🗺️ Feuille de route
-- Bascule clair/sombre  
+- Préférence de délai réseau (timeout) et proxy  
+- Export de la conversation (Markdown / texte brut)  
+- Presets par backend (URL/modèle/temp) avec bascule rapide  
+- Style de survol des liens + espacements et marges de paragraphes  
+- Personnalisation des raccourcis (envoyer, stop, tout copier)  
 
 ---
 
