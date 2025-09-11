@@ -10,17 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Styled blockquotes (`>`): visual left rule + wrapped text.
 - Heuristic language detection for unlabeled code fences.
 - Light/Dark theme toggle scoped to chat pane with GtkSourceView scheme switching.
+- System prompt configuration (persisted) and UI dialog; included for Ollama (history) and OpenAI (messages).
+- Copy-all preserves fence language (```lang) from GtkSourceBuffer.
 - GitHub Actions: CI matrix for GtkSourceView 3→4 fallback, artifacts upload.
 - GitHub Actions: tag-based Release with zipped assets and SHA256.
 
 ### Changed
 - README: badges, screenshot, bilingual sections.
+- “Send selection” now appends selection into the input box instead of sending immediately.
 
 ### Fixed
 - CI now installs `geany` (contains headers & geany.pc) instead of non-existent `libgeany-dev`.
 - Open links using the widget toplevel with `gtk_show_uri_on_window` (fixes build and ensures correct parent window).
 - After inserting code into the editor, return focus to Scintilla.
 - Ollama history includes assistant replies to prevent repeated answers on subsequent prompts.
+- Reset history when API or model changes to avoid mixed contexts.
+- HTTP error reporting includes response codes and curl messages.
+- Input area and code blocks honor theme colors; visible caret in dark mode.
 
 ## [1.0.0] - 2025-09-10
 ### Added
