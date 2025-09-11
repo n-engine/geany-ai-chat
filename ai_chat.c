@@ -333,12 +333,11 @@ typedef struct
 static gboolean
 open_link_cb(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
 {
+    (void)user_data;
     if (event->type != GDK_BUTTON_RELEASE || event->button != 1)
         return FALSE;
 
     GtkTextIter iter;
-    GtkTextBuffer *buffer =
-        gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget));
     gint x, y;
     gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(widget),
                                           GTK_TEXT_WINDOW_WIDGET,
@@ -354,7 +353,10 @@ open_link_cb(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
         if (url)
         {
             GError *err = NULL;
-            gtk_show_uri_on_window(GTK_WINDOW(ui.window),
+            GtkWidget *toplevel = gtk_widget_get_toplevel(widget);
+            if (!GTK_IS_WINDOW(toplevel))
+                toplevel = NULL;
+            gtk_show_uri_on_window(GTK_WINDOW(toplevel),
                                    url,
                                    GDK_CURRENT_TIME,
                                    &err);
@@ -374,9 +376,8 @@ open_link_cb(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
 static gboolean
 motion_notify_cb(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
 {
+    (void)user_data;
     GtkTextIter iter;
-    GtkTextBuffer *buffer =
-        gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget));
     gint x, y;
     gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(widget),
                                           GTK_TEXT_WINDOW_WIDGET,
@@ -579,6 +580,7 @@ static GtkWidget* add_assistant_stream_row(Req *req)
 
 static void insert_code_into_editor(GtkButton *b, gpointer data)
 {
+    (void)b;
     GtkTextBuffer *tb = GTK_TEXT_BUFFER(data);
     GtkTextIter a, z;
     gtk_text_buffer_get_bounds(tb, &a, &z);
@@ -593,13 +595,14 @@ static void insert_code_into_editor(GtkButton *b, gpointer data)
         else
             sci_insert_text(sci, sci_get_current_position(sci), txt);
 
-        document_grab_focus(doc, TRUE, TRUE);
+        gtk_widget_grab_focus(GTK_WIDGET(sci));
     }
     g_free(txt);
 }
 
 static void copy_code_clicked(GtkButton *b, gpointer data)
 {
+    (void)b;
     GtkTextBuffer *tb = GTK_TEXT_BUFFER(data);
     GtkTextIter a, z;
     gtk_text_buffer_get_bounds(tb, &a, &z);
@@ -1202,6 +1205,7 @@ static void insert_emoji_to_input(const gchar *emoji)
 
 static void on_emoji_click(GtkButton *b, gpointer u)
 {
+    (void)b; (void)u;
     GtkWidget *menu = gtk_menu_new();
     const gchar *emojis[] = {
         "🙂","😂","😅","😉","🤔","😎","😍","👍","👎","🚀",
@@ -1227,6 +1231,7 @@ static void on_emoji_click(GtkButton *b, gpointer u)
 
 static gboolean on_input_key(GtkWidget *w, GdkEventKey *e, gpointer u)
 {
+    (void)w; (void)u;
     if (e->keyval == GDK_KEY_Return && !(e->state & GDK_SHIFT_MASK))
     {
         g_signal_emit_by_name(ui.btn_send, "clicked");
@@ -1289,6 +1294,7 @@ static void send_prompt(const gchar *prompt)
 
 static void on_send(GtkButton *b, gpointer u)
 {
+    (void)b; (void)u;
     GtkTextIter a, z;
     gtk_text_buffer_get_bounds(ui.input_buf, &a, &z);
     gchar *prompt = gtk_text_buffer_get_text(ui.input_buf, &a, &z, FALSE);
@@ -1299,6 +1305,7 @@ static void on_send(GtkButton *b, gpointer u)
 
 static void on_send_selection(GtkButton *b, gpointer u)
 {
+    (void)b; (void)u;
     GeanyDocument *doc = document_get_current();
     if (!doc || !doc->editor || !doc->editor->sci)
     {
@@ -1337,6 +1344,7 @@ static void on_send_selection(GtkButton *b, gpointer u)
 
 static void on_clear(GtkButton *b, gpointer u)
 {
+    (void)b; (void)u;
     GList *children = gtk_container_get_children(GTK_CONTAINER(ui.msg_list));
     for (GList *l = children; l; l = l->next)
         gtk_widget_destroy(GTK_WIDGET(l->data));
@@ -1345,6 +1353,7 @@ static void on_clear(GtkButton *b, gpointer u)
 
 static void on_copy_all(GtkButton *b, gpointer u)
 {
+    (void)b; (void)u;
     GString *out = g_string_new("");
     GList *rows = gtk_container_get_children(GTK_CONTAINER(ui.msg_list));
     for (GList *r = rows; r; r = r->next)
@@ -1384,6 +1393,7 @@ static void on_copy_all(GtkButton *b, gpointer u)
 
 static void on_reset(GtkButton *b, gpointer u)
 {
+    (void)b; (void)u;
     history_init();
     GtkWidget *row = make_row_container();
     GtkWidget *outer = gtk_bin_get_child(GTK_BIN(row));
@@ -1397,6 +1407,7 @@ static void on_reset(GtkButton *b, gpointer u)
 
 static void on_stop(GtkButton *b, gpointer u)
 {
+    (void)b; (void)u;
     if (current_req)
     {
         g_atomic_int_set(&current_req->cancel, 1);
