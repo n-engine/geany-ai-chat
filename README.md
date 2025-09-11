@@ -19,14 +19,20 @@
 ### ✨ Features
 - Chat pane in Geany’s Message Window (bottom panel)
 - **Streaming** replies (Ollama JSON-lines / OpenAI-compatible SSE)
-- **Send editor selection** as prompt
+- **Append editor selection** to the input box
 - **Stop** ongoing generation
 - Markdown **```fences```** with **syntax highlighting** (GtkSourceView)
+- Heuristic language detection when fence lacks a `lang` hint
 - Per-block **Copy** and **Insert into editor**
+- **Copy all** preserves fenced code languages (```lang)
+- **Clickable links** in messages (Markdown `[text](url)` and bare URLs)
+- Visual **blockquotes** (`>`) with styling
 - **Auto-scroll** during streaming
 - Basic on-disk **preferences** (URL, model, temperature, streaming, API key)
+- Light/Dark theme toggle (scoped to chat pane)
+- Configurable **system prompt** (context), persisted and sent to backends
 
-> Coming next: **clickable links** and **blockquote** styling.
+> Coming next: **blockquote** styling.
 
 ---
 
@@ -65,10 +71,11 @@ sudo cp ai_chat.so /usr/lib/x86_64-linux-gnu/geany/
    - **Model:** e.g. `llama3:8b` (Ollama), or a remote model name
    - **Temperature, Streaming, API Key** (if needed)  
 4. Type your message and press **Enter** to send (**Shift+Enter** for newline).
-5. Use **Send selection** to send the current editor selection.
-6. In replies:
+5. Use **Send selection** to append the current editor selection into the input box.
+6. Use **Context…** to set a system prompt applied to the conversation.
+7. In replies:
    - Code blocks have **Copy** & **Insert into editor** buttons.
-7. **Stop** cancels the current request, **Reset history** clears memory.
+8. **Stop** cancels the current request. **Reset history** clears memory (system prompt remains).
 
 ---
 
@@ -77,7 +84,7 @@ A config file is stored at:
 ```
 ~/.config/geany/ai_chat.conf
 ```
-It keeps: backend, base URL, model, temperature, streaming flag, API key.
+It keeps: backend, base URL, model, temperature, streaming flag, API key, dark theme, system prompt.
 
 ---
 
@@ -92,7 +99,8 @@ It keeps: backend, base URL, model, temperature, streaming flag, API key.
 - **Weird escape sequences in replies (e.g., `\u003e`, `\"`)**
   - Handled: JSON strings are fully un-escaped in the stream.
 - **HTTP errors**
-  - Check Base URL / model name. For OpenAI-compatible endpoints, set your **API key**.
+  - Now include error codes and curl messages; check Base URL / model and credentials.
+  - Switching API or model resets history to avoid mixed contexts.
 
 ---
 
@@ -103,10 +111,11 @@ It keeps: backend, base URL, model, temperature, streaming flag, API key.
 ---
 
 ### 🗺️ Roadmap
-- Clickable links in messages  
-- Visual blockquotes (`>`)  
-- Optional light/dark theming toggle  
-- Heuristic language detection for code fences without a `lang` hint
+- Network timeout preference and proxy settings  
+- Export conversation as Markdown / plain text  
+- Per-backend presets (URL/model/temp) with quick switch  
+- Link hover style + spacing and paragraph margins  
+- Keyboard shortcuts customization (send, stop, copy all)  
 
 ---
 
@@ -128,14 +137,20 @@ MIT — see `LICENSE`.
 ### ✨ Fonctionnalités
 - Onglet de chat dans la **fenêtre de messages** de Geany (panneau bas)
 - Réponses en **streaming** (JSON-lines Ollama / SSE OpenAI-compatible)
-- **Envoyer la sélection** de l’éditeur comme prompt
+- **Ajouter la sélection** de l’éditeur dans la zone de saisie
 - **Stop** pour annuler la génération
 - **Blocs ```code```** avec **coloration syntaxique** (GtkSourceView)
+- Détection heuristique du langage quand la fence n’indique pas `lang`
 - Boutons par bloc : **Copier** & **Insérer dans l’éditeur**
+- **Copier tout** préserve la langue des fences (```lang)
+- **Liens cliquables** dans les messages (Markdown `[texte](url)` et URLs simples)
+- **Blockquotes** (`>`) avec style visuel
 - **Auto-scroll** pendant le stream
 - **Préférences** sur disque (URL, modèle, température, streaming, clé)
+- Bascule thème clair/sombre (portée à l’onglet de chat)
+- **Contexte système** configurable (persisté et envoyé aux backends)
 
-> À venir : **liens cliquables** et **blockquote** stylés.
+> À venir : **blockquotes** stylés.
 
 ---
 
@@ -174,10 +189,11 @@ sudo cp ai_chat.so /usr/lib/x86_64-linux-gnu/geany/
    - **Modèle** : ex. `llama3:8b` (Ollama), ou un modèle distant
    - **Température, Streaming, Clé API** (si besoin)  
 4. Saisir le message, **Entrée** pour envoyer (**Shift+Entrée** pour retour à la ligne).
-5. **Envoyer sélection** pour envoyer la sélection de l’éditeur.
-6. Dans les réponses :
+5. **Envoyer sélection** ajoute la sélection de l’éditeur à la zone de saisie.
+6. Bouton **Contexte…** pour définir un prompt système appliqué à la conversation.
+7. Dans les réponses :
    - Les blocs de code ont **Copier** & **Insérer dans l’éditeur**.
-7. **Stop** annule la requête en cours, **Réinit. histo** vide l’historique.
+8. **Stop** annule la requête en cours, **Réinit. histo** vide l’historique (le contexte système reste).
 
 ---
 
@@ -186,7 +202,7 @@ Fichier :
 ```
 ~/.config/geany/ai_chat.conf
 ```
-Contient : backend, URL, modèle, température, streaming, clé API.
+Contient : backend, URL, modèle, température, streaming, clé API, thème sombre, contexte système.
 
 ---
 
@@ -201,7 +217,8 @@ Contient : backend, URL, modèle, température, streaming, clé API.
 - **Séquences d’échappement visibles (`\u003e`, `\"`)**
   - Géré : les chaînes JSON sont dés-échappées pendant le stream.
 - **Erreurs HTTP**
-  - Vérifiez l’URL / le nom de modèle. Pour l’API OpenAI-compatible, définissez votre **clé**.
+  - Désormais avec codes et messages; vérifiez URL / modèle et clés.
+  - Le changement d’API ou de modèle réinitialise l’historique pour éviter les contextes mélangés.
 
 ---
 
@@ -212,10 +229,7 @@ Contient : backend, URL, modèle, température, streaming, clé API.
 ---
 
 ### 🗺️ Feuille de route
-- Liens cliquables dans les messages  
-- Blockquotes (`>`) avec style  
 - Bascule clair/sombre  
-- Détection heuristique du langage quand la fence n’indique pas `lang`
 
 ---
 
