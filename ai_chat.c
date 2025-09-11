@@ -659,12 +659,12 @@ static void apply_theme_css(void)
         ".ai-chat { background: #1e1e1e; }\n"
         ".ai-chat label { color: #e6e6e6; }\n"
         ".ai-chat .blockquote { border-left: 3px solid #4a4a4a; padding-left: 6px; }\n"
-        ".ai-chat .code { background: #151515; }\n";
+        ".ai-chat .code { background: #151515; border: 1px solid #333; border-radius: 4px; padding: 4px 6px; }\n";
 
     const gchar *css_light =
         ".ai-chat { }\n"
         ".ai-chat .blockquote { border-left: 3px solid #c9c9c9; padding-left: 6px; }\n"
-        ".ai-chat .code { background: #f7f7f7; }\n";
+        ".ai-chat .code { background: #f7f7f7; border: 1px solid #ddd; border-radius: 4px; padding: 4px 6px; }\n";
 
     const gchar *css = prefs.dark_theme ? css_dark : css_light;
     gtk_css_provider_load_from_data(g_theme_provider, css, -1, NULL);
