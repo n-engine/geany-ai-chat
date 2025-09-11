@@ -28,6 +28,7 @@
 - Visual **blockquotes** (`>`) with styling
 - **Auto-scroll** during streaming
 - Basic on-disk **preferences** (URL, model, temperature, streaming, API key)
+- Light/Dark theme toggle (scoped to chat pane)
 
 > Coming next: **blockquote** styling.
 
@@ -137,6 +138,7 @@ MIT — see `LICENSE`.
 - **Blockquotes** (`>`) avec style visuel
 - **Auto-scroll** pendant le stream
 - **Préférences** sur disque (URL, modèle, température, streaming, clé)
+- Bascule thème clair/sombre (portée à l’onglet de chat)
 
 > À venir : **blockquotes** stylés.
 
