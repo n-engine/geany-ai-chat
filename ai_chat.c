@@ -679,6 +679,87 @@ g_free(code_clean);
 
 static GtkWidget* build_assistant_composite_from_markdown(const gchar *text)
 {
+    GtkWidget *make_paragraph_label(const gchar *ptext)
+    {
+        GtkWidget *lbl = gtk_label_new(NULL);
+        gchar *markup_txt = mk_markup_with_links(ptext);
+        gtk_label_set_markup(GTK_LABEL(lbl), markup_txt);
+        g_free(markup_txt);
+        gtk_label_set_use_markup(GTK_LABEL(lbl), TRUE);
+        gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
+        g_signal_connect(lbl, "activate-link", G_CALLBACK(on_label_activate_link), NULL);
+        gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
+        gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
+        gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
+        return lbl;
+    }
+
+    GtkWidget *make_blockquote(const gchar *qtext)
+    {
+        GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
+        gtk_widget_set_margin_top(sep, 2);
+        gtk_widget_set_margin_bottom(sep, 2);
+        gtk_box_pack_start(GTK_BOX(hbox), sep, FALSE, FALSE, 0);
+
+        GtkWidget *lbl = make_paragraph_label(qtext);
+        gtk_widget_set_margin_start(lbl, 6);
+        gtk_box_pack_start(GTK_BOX(hbox), lbl, TRUE, TRUE, 0);
+        return hbox;
+    }
+
+    void pack_with_blockquotes(GtkWidget *box, const gchar *segment)
+    {
+        const gchar *s = segment ? segment : "";
+        GString *acc = g_string_new(NULL);
+        gboolean in_quote = FALSE;
+
+        while (*s)
+        {
+            const gchar *line_end = strchr(s, '\n');
+            gsize len = line_end ? (gsize)(line_end - s) : strlen(s);
+
+            /* Detect blockquote line: optional spaces then '>' */
+            const gchar *t = s;
+            while (t < s + len && (*t == ' ' || *t == '\t')) t++;
+            gboolean is_quote = (t < s + len && *t == '>');
+
+            if (is_quote) {
+                t++;
+                if (t < s + len && *t == ' ') t++;
+            }
+
+            if (is_quote != in_quote)
+            {
+                if (acc->len > 0)
+                {
+                    GtkWidget *w = in_quote ? make_blockquote(acc->str) : make_paragraph_label(acc->str);
+                    gtk_box_pack_start(GTK_BOX(box), w, FALSE, FALSE, 0);
+                    g_string_set_size(acc, 0);
+                }
+                in_quote = is_quote;
+            }
+
+            if (is_quote)
+                g_string_append_len(acc, t, (s + len) - t);
+            else
+                g_string_append_len(acc, s, len);
+
+            /* preserve original newlines */
+            if (line_end)
+                g_string_append_c(acc, '\n');
+
+            s = line_end ? line_end + 1 : s + len;
+        }
+
+        if (acc->len > 0)
+        {
+            GtkWidget *w = in_quote ? make_blockquote(acc->str) : make_paragraph_label(acc->str);
+            gtk_box_pack_start(GTK_BOX(box), w, FALSE, FALSE, 0);
+        }
+        g_string_free(acc, TRUE);
+    }
+
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
 
     GtkWidget *hdr = gtk_label_new(NULL);
@@ -695,36 +776,14 @@ static GtkWidget* build_assistant_composite_from_markdown(const gchar *text)
         if (!f)
         {
             if (*p)
-            {
-                GtkWidget *lbl = gtk_label_new(NULL);
-            gchar *markup_txt = mk_markup_with_links(p);
-            gtk_label_set_markup(GTK_LABEL(lbl), markup_txt);
-            g_free(markup_txt);
-            gtk_label_set_use_markup(GTK_LABEL(lbl), TRUE);
-            gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
-            g_signal_connect(lbl, "activate-link", G_CALLBACK(on_label_activate_link), NULL);
-                gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
-                gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
-                gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
-                gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
-            }
+                pack_with_blockquotes(outer, p);
             break;
         }
 
         if (f > p)
         {
             gchar *para = g_strndup(p, f - p);
-            GtkWidget *lbl = gtk_label_new(NULL);
-            gchar *markup_txt = mk_markup_with_links(para);
-            gtk_label_set_markup(GTK_LABEL(lbl), markup_txt);
-            g_free(markup_txt);
-            gtk_label_set_use_markup(GTK_LABEL(lbl), TRUE);
-            gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
-            g_signal_connect(lbl, "activate-link", G_CALLBACK(on_label_activate_link), NULL);
-            gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
-            gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
-            gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
-            gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
+            pack_with_blockquotes(outer, para);
             g_free(para);
         }
 
