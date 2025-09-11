@@ -22,6 +22,7 @@
 - **Send editor selection** as prompt
 - **Stop** ongoing generation
 - Markdown **```fences```** with **syntax highlighting** (GtkSourceView)
+- Heuristic language detection when fence lacks a `lang` hint
 - Per-block **Copy** and **Insert into editor**
 - **Clickable links** in messages (Markdown `[text](url)` and bare URLs)
 - Visual **blockquotes** (`>`) with styling
@@ -106,7 +107,6 @@ It keeps: backend, base URL, model, temperature, streaming flag, API key.
 
 ### 🗺️ Roadmap
 - Optional light/dark theming toggle  
-- Heuristic language detection for code fences without a `lang` hint
 
 ---
 
@@ -131,6 +131,7 @@ MIT — see `LICENSE`.
 - **Envoyer la sélection** de l’éditeur comme prompt
 - **Stop** pour annuler la génération
 - **Blocs ```code```** avec **coloration syntaxique** (GtkSourceView)
+- Détection heuristique du langage quand la fence n’indique pas `lang`
 - Boutons par bloc : **Copier** & **Insérer dans l’éditeur**
 - **Liens cliquables** dans les messages (Markdown `[texte](url)` et URLs simples)
 - **Blockquotes** (`>`) avec style visuel
@@ -215,7 +216,6 @@ Contient : backend, URL, modèle, température, streaming, clé API.
 
 ### 🗺️ Feuille de route
 - Bascule clair/sombre  
-- Détection heuristique du langage quand la fence n’indique pas `lang`
 
 ---
 
