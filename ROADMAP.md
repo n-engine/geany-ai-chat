@@ -8,6 +8,8 @@ Build via `pkg-config geany gtk+-3.0 gtksourceview-3.0` (fallback 4 si dispo). L
 ## D+1 — Work Orders (Codex-friendly)
 
 ### 003 — Anti-propagation des clics (chat pane)
+**Statut**: Fait
+
 **But**: aucun clic dans l’onglet chat ne remonte au handler “ouvrir fichier” de Geany.
 
 **Fichier**: `ai_chat.c`  
@@ -20,9 +22,18 @@ Build via `pkg-config geany gtk+-3.0 gtksourceview-3.0` (fallback 4 si dispo). L
    - `g_signal_connect(root_container, "event", G_CALLBACK(chat_event_blocker), NULL);`
 3. Vérifier que les liens (signal `activate-link`) et les boutons (“Copier”, “Insérer”, “Stop”) restent fonctionnels.
 
+**Implémentation**:
+- Ajout de `static gboolean chat_event_blocker(GtkWidget*, GdkEvent*, gpointer)`
+  dans `ai_chat.c` qui retourne TRUE pour BUTTON_PRESS/RELEASE, 2BUTTON_PRESS,
+  MOTION_NOTIFY, SCROLL, sauf si la cible est un bouton interne, un
+  `GtkLabel` avec lien actif (via `gtk_label_get_current_uri()`), ou un
+  `GtkSourceView` (détecté via ascendance de type).
+- Connexion au conteneur racine `ui.root_box` avec ajout des masques
+  d’événements requis et `g_signal_connect(root_box, "event", ...)`.
+
 **Critères d’acceptation**:
-- Cliquer dans une zone vide du chat n’ouvre plus de fichiers.
-- Liens/boutons inchangés.
+- Cliquer dans une zone vide du chat n’ouvre plus de fichiers (OK).
+- Liens/boutons inchangés (OK).
 
 **Commit**: `feat: swallow mouse events in chat pane to prevent Geany open-file handler`
 
