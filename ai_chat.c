@@ -1051,6 +1051,18 @@ static gchar *json_escape(const gchar *s)
     return g_string_free(g, FALSE);
 }
 
+/* Serialize a double with ASCII dot irrespective of locale */
+static void json_append_double(GString *out, const char *key, double v)
+{
+    char buf[G_ASCII_DTOSTR_BUF_SIZE];
+    /* short representation to avoid verbose tails */
+    g_ascii_formatd(buf, sizeof(buf), "%.6g", v);
+    if (key && *key)
+        g_string_append_printf(out, "\"%s\":%s", key, buf);
+    else
+        g_string_append(out, buf);
+}
+
 /* Forward decl for use in history_init */
 static void history_add(const gchar *role, const gchar *content);
 
@@ -1380,10 +1392,19 @@ static gpointer net_thread(gpointer data)
     {
         url = g_strdup_printf("%s/api/chat", req->base);
         history_add("user", req->prompt);
-        payload = g_strdup_printf("{\"model\":\"%s\",\"messages\":%s,"
-                                  "\"stream\":%s,\"options\":{\"temperature\":%.3f}}",
-                                  req->model, history_json,
-                                  req->streaming ? "true" : "false", req->temp);
+        {
+            GString *gs = g_string_new(NULL);
+            g_string_append(gs, "{\"model\":\"");
+            g_string_append(gs, req->model);
+            g_string_append(gs, "\",\"messages\":");
+            g_string_append(gs, history_json);
+            g_string_append(gs, ",\"stream\":");
+            g_string_append(gs, req->streaming ? "true" : "false");
+            g_string_append(gs, ",\"options\":{");
+            json_append_double(gs, "temperature", req->temp);
+            g_string_append(gs, "}}");
+            payload = g_string_free(gs, FALSE);
+        }
         hdr = curl_slist_append(hdr, "Content-Type: application/json");
     }
     else
@@ -1393,14 +1414,27 @@ static gpointer net_thread(gpointer data)
         gchar *esc_sys = NULL;
         gboolean has_sys = (prefs.system_prompt && *prefs.system_prompt);
         if (has_sys) esc_sys = json_escape(prefs.system_prompt);
-        if (has_sys)
-            payload = g_strdup_printf("{\"model\":\"%s\",\"messages\":[{\"role\":\"system\",\"content\":\"%s\"},{\"role\":\"user\",\"content\":\"%s\"}],\"temperature\":%.3f,\"stream\":%s}",
-                                      req->model, esc_sys, esc_user, req->temp,
-                                      req->streaming ? "true" : "false");
-        else
-            payload = g_strdup_printf("{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}],\"temperature\":%.3f,\"stream\":%s}",
-                                      req->model, esc_user, req->temp,
-                                      req->streaming ? "true" : "false");
+        {
+            GString *gs = g_string_new(NULL);
+            g_string_append(gs, "{\"model\":\"");
+            g_string_append(gs, req->model);
+            g_string_append(gs, "\",\"messages\":[");
+            if (has_sys)
+            {
+                g_string_append(gs, "{\"role\":\"system\",\"content\":\"");
+                g_string_append(gs, esc_sys);
+                g_string_append(gs, "\"},");
+            }
+            g_string_append(gs, "{\"role\":\"user\",\"content\":\"");
+            g_string_append(gs, esc_user);
+            g_string_append(gs, "\"}]");
+            g_string_append(gs, ",\"temperature\":");
+            json_append_double(gs, NULL, req->temp);
+            g_string_append(gs, ",\"stream\":");
+            g_string_append(gs, req->streaming ? "true" : "false");
+            g_string_append(gs, "}");
+            payload = g_string_free(gs, FALSE);
+        }
         g_free(esc_user);
         g_free(esc_sys);
         hdr = curl_slist_append(hdr, "Content-Type: application/json");
