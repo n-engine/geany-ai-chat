@@ -1,0 +1,8 @@
+litellm_settings:
+  drop_params: true
+
+model_list:
+  - model_name: "mixtral"              # le nom que tu passeras à codex
+    litellm_params:
+      model: "ollama/llama3.1:8b"     # use chat; mappe bien vers chat/completions
+      api_base: "http://localhost:11434"

@@ -169,6 +169,68 @@ typedef struct
 static Ui ui;
 
 
+/* --- Bloqueur d'événements souris sur le conteneur racine du chat --- */
+/* Swallow: press/release, double, motion, scroll — sauf boutons du chat, */
+/* liens GtkLabel actifs, et GtkSourceView.                              */
+
+static gboolean has_ancestor_of_type(GtkWidget *w, GType type)
+{
+    GtkWidget *p = w;
+    while (p)
+    {
+        if (g_type_is_a(G_OBJECT_TYPE(p), type))
+            return TRUE;
+        p = gtk_widget_get_parent(p);
+    }
+    return FALSE;
+}
+
+static gboolean chat_event_blocker(GtkWidget *widget, GdkEvent *event, gpointer user_data)
+{
+    (void)widget; (void)user_data;
+
+    if (!event)
+        return FALSE;
+
+    switch (event->type)
+    {
+        case GDK_BUTTON_PRESS:
+        case GDK_BUTTON_RELEASE:
+        case GDK_2BUTTON_PRESS:
+        case GDK_MOTION_NOTIFY:
+        case GDK_SCROLL:
+            break;
+        default:
+            return FALSE; /* ne bloque que les événements souris ciblés */
+    }
+
+    GtkWidget *target = gtk_get_event_widget(event);
+    if (!GTK_IS_WIDGET(target))
+        return TRUE; /* prudence: avaler si cible inconnue */
+
+    /* 1) Laisser passer les boutons (et leurs enfants) du chat */
+    if (has_ancestor_of_type(target, GTK_TYPE_BUTTON))
+        return FALSE;
+
+    /* 2) Laisser passer les GtkLabel lorsqu'un lien est actif sous le curseur */
+    if (GTK_IS_LABEL(target))
+    {
+        const gchar *cur = gtk_label_get_current_uri(GTK_LABEL(target));
+        if (cur && *cur)
+            return FALSE;
+    }
+
+    /* 3) Laisser passer les GtkSourceView (sélection/scroll/code blocks) */
+#ifdef GTK_SOURCE_VIEW_H
+    if (has_ancestor_of_type(target, GTK_SOURCE_TYPE_VIEW))
+        return FALSE;
+#endif
+
+    /* Sinon: on avale pour ne pas fuiter vers Geany */
+    return TRUE;
+}
+
+
 /* ---------- Clickable links (labels with Pango <a href=...>) ---------- */
 /* Convert plaintext + Markdown [label](url) + bare URLs into Pango markup with <a>. */
 /* No linkification inside triple-backtick code fences. */
@@ -1853,6 +1915,12 @@ static void build_ui(void)
 
     ui.root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     gtk_style_context_add_class(gtk_widget_get_style_context(ui.root_box), "ai-chat");
+    /* S'assurer de recevoir les événements souris pour bloquer les fuites */
+    gtk_widget_add_events(ui.root_box,
+        GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK |
+        GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK);
+    g_signal_connect(ui.root_box, "event",
+                     G_CALLBACK(chat_event_blocker), NULL);
     apply_theme_css();
 
     GtkWidget *opts = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
