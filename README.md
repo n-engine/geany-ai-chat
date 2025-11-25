@@ -17,7 +17,7 @@
 ## English
 
 ### ✨ Features
-- Chat pane in Geany’s Message Window (bottom panel)
+- Chat pane in Geany's Message Window (bottom panel)
 - **Streaming** replies (Ollama JSON-lines / OpenAI-compatible SSE)
 - **Append editor selection** to the input box
 - **Stop** ongoing generation
@@ -30,9 +30,13 @@
 - **Auto-scroll** during streaming
 - Basic on-disk **preferences** (URL, model, temperature, streaming, API key)
 - Light/Dark theme toggle (scoped to chat pane)
-- Configurable **system prompt** (context), persisted and sent to backends
-
-> Coming next: **blockquote** styling.
+- **Model dropdown** with auto-fetch from API (+ manual entry)
+- **System prompt presets**: create, rename, delete, and switch between saved prompts
+- **Backend presets**: save and quickly switch between API configurations (URL, model, temperature, API key)
+- **Export conversation** to Markdown file
+- **Network settings**: configurable timeout and HTTP proxy
+- **Links toggle**: enable/disable clickable URLs in messages
+- **Keyboard shortcuts**: Enter to send, Escape to stop, Ctrl+Shift+C to copy all
 
 ---
 
@@ -68,11 +72,14 @@ sudo cp ai_chat.so /usr/lib/x86_64-linux-gnu/geany/
 3. Configure:
    - **Backend:** *Ollama* or *OpenAI-compatible*
    - **Base URL:** e.g. `http://127.0.0.1:11434` (Ollama) or your API host
-   - **Model:** e.g. `llama3:8b` (Ollama), or a remote model name
-   - **Temperature, Streaming, API Key** (if needed)  
+   - **Model:** select from dropdown (click **↻** to refresh) or type manually
+   - **Temperature, Streaming, API Key** (if needed)
 4. Type your message and press **Enter** to send (**Shift+Enter** for newline).
 5. Use **Send selection** to append the current editor selection into the input box.
-6. Use **Context…** to set a system prompt applied to the conversation.
+6. Use **Context…** to manage system prompts:
+   - Select a preset or "(Custom)"
+   - **+** to create a new preset from current text
+   - **−** to delete, **✎** to rename
 7. In replies:
    - Code blocks have **Copy** & **Insert into editor** buttons.
 8. **Stop** cancels the current request. **Reset history** clears memory (system prompt remains).
@@ -84,7 +91,7 @@ A config file is stored at:
 ```
 ~/.config/geany/ai_chat.conf
 ```
-It keeps: backend, base URL, model, temperature, streaming flag, API key, dark theme, system prompt.
+It keeps: backend, base URL, model, temperature, streaming flag, API key, dark theme, current system prompt, and all saved presets.
 
 ---
 
@@ -111,11 +118,8 @@ It keeps: backend, base URL, model, temperature, streaming flag, API key, dark t
 ---
 
 ### 🗺️ Roadmap
-- Network timeout preference and proxy settings  
-- Export conversation as Markdown / plain text  
-- Per-backend presets (URL/model/temp) with quick switch  
-- Link hover style + spacing and paragraph margins  
-- Keyboard shortcuts customization (send, stop, copy all)  
+- Project folder as knowledge base (RAG)
+- Link hover style  
 
 ---
 
@@ -137,20 +141,24 @@ MIT — see `LICENSE`.
 ### ✨ Fonctionnalités
 - Onglet de chat dans la **fenêtre de messages** de Geany (panneau bas)
 - Réponses en **streaming** (JSON-lines Ollama / SSE OpenAI-compatible)
-- **Ajouter la sélection** de l’éditeur dans la zone de saisie
+- **Ajouter la sélection** de l'éditeur dans la zone de saisie
 - **Stop** pour annuler la génération
 - **Blocs ```code```** avec **coloration syntaxique** (GtkSourceView)
-- Détection heuristique du langage quand la fence n’indique pas `lang`
-- Boutons par bloc : **Copier** & **Insérer dans l’éditeur**
+- Détection heuristique du langage quand la fence n'indique pas `lang`
+- Boutons par bloc : **Copier** & **Insérer dans l'éditeur**
 - **Copier tout** préserve la langue des fences (```lang)
 - **Liens cliquables** dans les messages (Markdown `[texte](url)` et URLs simples)
 - **Blockquotes** (`>`) avec style visuel
 - **Auto-scroll** pendant le stream
 - **Préférences** sur disque (URL, modèle, température, streaming, clé)
-- Bascule thème clair/sombre (portée à l’onglet de chat)
-- **Contexte système** configurable (persisté et envoyé aux backends)
-
-> À venir : **blockquotes** stylés.
+- Bascule thème clair/sombre (portée à l'onglet de chat)
+- **Liste déroulante des modèles** avec récupération depuis l'API (+ saisie manuelle)
+- **Presets de prompts système** : créer, renommer, supprimer et basculer entre prompts sauvegardés
+- **Presets de backends** : sauvegarder et basculer rapidement entre configurations API (URL, modèle, température, clé)
+- **Export de conversation** en fichier Markdown
+- **Paramètres réseau** : timeout et proxy HTTP configurables
+- **Toggle liens** : activer/désactiver les URLs cliquables
+- **Raccourcis clavier** : Entrée pour envoyer, Escape pour arrêter, Ctrl+Shift+C pour tout copier
 
 ---
 
@@ -186,11 +194,14 @@ sudo cp ai_chat.so /usr/lib/x86_64-linux-gnu/geany/
 3. Paramétrer :
    - **Backend** : *Ollama* ou *OpenAI-compatible*
    - **URL** : ex. `http://127.0.0.1:11434` (Ollama) ou votre API
-   - **Modèle** : ex. `llama3:8b` (Ollama), ou un modèle distant
-   - **Température, Streaming, Clé API** (si besoin)  
+   - **Modèle** : sélectionner dans la liste (clic **↻** pour rafraîchir) ou saisir manuellement
+   - **Température, Streaming, Clé API** (si besoin)
 4. Saisir le message, **Entrée** pour envoyer (**Shift+Entrée** pour retour à la ligne).
-5. **Envoyer sélection** ajoute la sélection de l’éditeur à la zone de saisie.
-6. Bouton **Contexte…** pour définir un prompt système appliqué à la conversation.
+5. **Envoyer sélection** ajoute la sélection de l'éditeur à la zone de saisie.
+6. Bouton **Contexte…** pour gérer les prompts système :
+   - Sélectionner un preset ou "(Personnalisé)"
+   - **+** pour créer un nouveau preset à partir du texte actuel
+   - **−** pour supprimer, **✎** pour renommer
 7. Dans les réponses :
    - Les blocs de code ont **Copier** & **Insérer dans l’éditeur**.
 8. **Stop** annule la requête en cours, **Réinit. histo** vide l’historique (le contexte système reste).
@@ -202,7 +213,7 @@ Fichier :
 ```
 ~/.config/geany/ai_chat.conf
 ```
-Contient : backend, URL, modèle, température, streaming, clé API, thème sombre, contexte système.
+Contient : backend, URL, modèle, température, streaming, clé API, thème sombre, prompt système actuel et tous les presets sauvegardés.
 
 ---
 
@@ -229,11 +240,8 @@ Contient : backend, URL, modèle, température, streaming, clé API, thème somb
 ---
 
 ### 🗺️ Feuille de route
-- Préférence de délai réseau (timeout) et proxy  
-- Export de la conversation (Markdown / texte brut)  
-- Presets par backend (URL/modèle/temp) avec bascule rapide  
-- Style de survol des liens + espacements et marges de paragraphes  
-- Personnalisation des raccourcis (envoyer, stop, tout copier)  
+- Dossier projet comme base de connaissances (RAG)
+- Style de survol des liens  
 
 ---
 

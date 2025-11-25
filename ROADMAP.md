@@ -40,9 +40,11 @@ Build via `pkg-config geany gtk+-3.0 gtksourceview-3.0` (fallback 4 si dispo). L
 ---
 
 ### 004 — Durcissement des liens & schémas autorisés
+**Statut**: Fait
+
 **But**: URL parsing plus sûr, schémas filtrés.
 
-**Fichier**: `ai_chat.c`  
+**Fichier**: `ui_render.c`  
 **Étapes**:
 1. Dans le helper de linkification (Pango `<a href>`):  
    - **Autoriser**: `http`, `https`, `mailto`, `ftp`.  
@@ -61,44 +63,43 @@ Build via `pkg-config geany gtk+-3.0 gtksourceview-3.0` (fallback 4 si dispo). L
 ---
 
 ### 005 — Polish visuel (paragraphes & blockquotes)
+**Statut**: Fait
+
 **But**: lisibilité homogène + contraste thème clair/sombre.
 
-**Fichier**: `ai_chat.c`  
-**Étapes**:
-1. Paragraphes (`GtkLabel`): marges verticales faibles et cohérentes (top/bottom).
-2. Blockquotes (déjà stylés): vérifier contraste sombre/clair; ajouter padding interne (gauche/droite) si nécessaire.
-3. Boutons des blocs de code: alignement vertical stable (marges homogènes).
+**Fichier**: `ui_render.c`
+**Fonctionnalités**:
+- Paragraphes avec marges verticales (3px top/bottom)
+- Blockquotes avec fond subtil, bordure gauche, padding, coins arrondis
+- Marges cohérentes entre paragraphes et blockquotes
+- Bon contraste thème clair et sombre
 
-**Critères d’acceptation**:
-- Lecture confortable en thème clair **et** sombre.
-- Pas de “sauts” visuels autour des quotes/blocs de code.
-
-**Commit**: `chore(ui): spacing adjustments for paragraphs and quotes; align code-block controls`
+**Commit**: `chore(ui): spacing adjustments for paragraphs and quotes`
 
 ---
 
-### 006 — Préférences “Liens cliquables”
-**But**: permettre d’activer/désactiver la feature.
+### 006 — Préférences "Liens cliquables"
+**Statut**: Fait
 
-**Fichiers**: `ai_chat.c`, `README.md`, config.  
-**Étapes**:
-1. Clé `links_enabled=true` dans `~/.config/geany/ai_chat.conf` (lecture/écriture).
-2. Case à cocher **“Rendre les liens cliquables”** dans les préférences du plugin.
-3. Rendu: si OFF → labels en texte brut (pas de linkification).  
-   - Option: re-render de la dernière réponse si trivial; sinon, documenter “appliqué aux nouveaux messages”.
+**But**: permettre d'activer/désactiver la feature.
 
-**Critères d’acceptation**:
-- Toggle ON/OFF persistant.
-- Avec OFF, aucun `<a>` inséré.
+**Fichiers**: `prefs.c/h`, `ui.c`, `ui_render.c`
+**Fonctionnalités**:
+- Clé `links_enabled=true` dans config
+- Checkbox "Liens" dans la barre d'options
+- Si OFF, les URLs restent en texte brut (pas de `<a>`)
+- Appliqué aux nouveaux messages
 
-**Commit**: `feat(prefs): add 'links_enabled' setting and toggle in preferences dialog`
+**Commit**: `feat(prefs): add 'links_enabled' toggle for clickable links`
 
 ---
 
 ### 007 — Vérifs & Documentation
+**Statut**: En cours (README à jour, CHANGELOG à compléter)
+
 **But**: fiabiliser et documenter.
 
-**Fichiers**: `README.md`, `CHANGELOG.md`, `ai_chat.c` (commentaires).  
+**Fichiers**: `README.md`, `CHANGELOG.md`.  
 **Étapes**:
 1. Cas limites (tests manuels) — voir ci-dessous.
 2. Doc: schémas autorisés vs ignorés; préférence “liens cliquables”; anti-propagation des clics.  
@@ -109,6 +110,142 @@ Build via `pkg-config geany gtk+-3.0 gtksourceview-3.0` (fallback 4 si dispo). L
 - README/CHANGELOG alignés.
 
 **Commit**: `docs: update README/CHANGELOG for link handling, preferences, and click swallowing`
+
+---
+
+### 008 — Refactoring modulaire
+**Statut**: Fait
+
+**But**: séparer le fichier monolithique `ai_chat.c` (~2000 lignes) en modules maintenables.
+
+**Fichiers créés**:
+- `src/prefs.c/h` — Gestion des préférences
+- `src/history.c/h` — Historique de conversation
+- `src/network.c/h` — Requêtes HTTP/curl avec streaming
+- `src/models.c/h` — Récupération liste des modèles depuis l'API
+- `src/ui_render.c/h` — Rendu markdown, blocs code, liens
+- `src/ui.c/h` — Interface utilisateur, construction, actions
+- `src/ai_chat.c` — Point d'entrée minimal (~55 lignes)
+
+**Commit**: `refactor: split monolithic ai_chat.c into modular source files`
+
+---
+
+### 009 — Liste déroulante des modèles
+**Statut**: Fait
+
+**But**: permettre de sélectionner un modèle depuis une liste récupérée de l'API.
+
+**Fichiers**: `models.c/h`, `ui.c`
+**Fonctionnalités**:
+- ComboBox avec entry (sélection ou saisie manuelle)
+- Bouton ↻ pour rafraîchir la liste
+- Chargement auto au démarrage et au changement d'API
+- Support Ollama (`/api/tags`) et OpenAI (`/v1/models`)
+
+**Commit**: `feat: add model dropdown with auto-fetch from API`
+
+---
+
+### 010 — Presets de prompts système
+**Statut**: Fait
+
+**But**: sauvegarder et gérer plusieurs prompts système.
+
+**Fichiers**: `prefs.c/h`, `ui.c`
+**Fonctionnalités**:
+- 3 presets par défaut : "Assistant général", "Codeur expert", "Relecteur"
+- Persistance dans `~/.config/geany/ai_chat.conf` section `[presets]`
+- Dialogue "Contexte…" avec :
+  - Combo pour sélectionner un preset ou "(Personnalisé)"
+  - Boutons + (créer), − (supprimer), ✎ (renommer)
+  - Éditeur de texte pour le contenu
+
+**Commit**: `feat: add system prompt presets with full CRUD management`
+
+---
+
+### 011 — Presets par backend (URL/modèle/temp)
+**Statut**: Fait
+
+**But**: sauvegarder des configurations complètes pour basculer rapidement entre backends.
+
+**Fichiers**: `prefs.c/h`, `ui.c/h`
+**Fonctionnalités**:
+- Structure `BackendPreset` : nom, API mode, URL, modèle, température, clé API
+- Persistance dans config section `[backends]`
+- Dialogue "Backends…" avec :
+  - Combo pour sélectionner un preset
+  - Boutons : Charger, Sauver (depuis config actuelle), Supprimer, Renommer
+  - Affichage des infos du preset sélectionné
+- Réinitialisation de l'historique lors du chargement d'un preset
+
+**Commit**: `feat: add backend configuration presets with quick switch`
+
+---
+
+### 012 — Export de conversation
+**Statut**: Fait
+
+**But**: exporter la conversation en fichier Markdown ou texte brut.
+
+**Fichiers**: `ui.c`, `ui.h`
+**Fonctionnalités**:
+- Bouton "Exporter…" dans la barre de boutons
+- Dialogue de sauvegarde avec filtres (Markdown, Texte, Tous)
+- Génération Markdown avec :
+  - Titre `# Conversation AI Chat`
+  - Headers `## Vous` / `## Assistant`
+  - Blocs de code avec langage préservé
+  - Séparateurs `---` entre messages
+- Confirmation dans le chat après export
+
+**Commit**: `feat: add conversation export to Markdown file`
+
+---
+
+### 013 — Timeout et proxy réseau
+**Statut**: Fait
+
+**But**: configurer délai de timeout et proxy HTTP.
+
+**Fichiers**: `prefs.c/h`, `network.c`, `ui.c`, `ui.h`
+**Fonctionnalités**:
+- Bouton "Réseau…" ouvre dialogue de configuration
+- Timeout en secondes (0-600, défaut 120)
+- Proxy HTTP/HTTPS/SOCKS5 (champ texte)
+- Persistance dans config
+- Application via `CURLOPT_TIMEOUT` et `CURLOPT_PROXY`
+
+**Commit**: `feat: add network timeout and proxy settings`
+
+---
+
+### 014 — RAG avec dossier projet
+**Statut**: À faire (complexe)
+
+**But**: utiliser les fichiers du projet Geany comme base de connaissances.
+
+**Approche envisagée**:
+- Indexation des fichiers du projet ouvert
+- Embeddings locaux ou via API
+- Injection du contexte pertinent dans les requêtes
+
+---
+
+### 015 — Raccourcis clavier
+**Statut**: Fait
+
+**But**: raccourcis clavier pour actions fréquentes.
+
+**Fichier**: `ui.c`
+**Fonctionnalités**:
+- **Entrée** : envoyer le message (sans Shift)
+- **Shift+Entrée** : nouvelle ligne
+- **Escape** : arrêter la génération (quand occupé)
+- **Ctrl+Shift+C** : copier toute la conversation
+
+**Commit**: `feat: add keyboard shortcuts (Escape to stop, Ctrl+Shift+C to copy all)`
 
 ---
 
@@ -132,11 +269,12 @@ Build via `pkg-config geany gtk+-3.0 gtksourceview-3.0` (fallback 4 si dispo). L
 
 ---
 
-## Rappels d’implémentation (Codex)
+## Rappels d'implémentation (Codex)
 - MAJ UI **uniquement** sur le **main thread** (`g_idle_add` si nécessaire).
 - **Interdits**: fonctions imbriquées GCC.
 - **GLib**: `g_new0`, `GString`, `g_clear_pointer` — libérer toutes les allocs.
 - **Labels** en **français**.
+- **Structure modulaire** : `src/` contient les modules séparés (prefs, history, network, models, ui, ui_render, ai_chat).
 - Build via `pkg-config geany gtk+-3.0 gtksourceview-3.0` (fallback 4 si besoin).
 - Linker: `-Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now`.
 
@@ -144,9 +282,9 @@ Build via `pkg-config geany gtk+-3.0 gtksourceview-3.0` (fallback 4 si dispo). L
 
 ## Workflow (rappel)
 ```bash
-git checkout -b feat/polish-links
-make
-git add ai_chat.c README.md CHANGELOG.md
+git checkout -b feat/nom-feature
+make clean && make
+git add src/*.c src/*.h README.md CHANGELOG.md
 git commit -m "feat: …"
 git push -u origin HEAD
 # Ouvrir la PR (release sur tag v*)
