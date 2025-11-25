@@ -1,0 +1,236 @@
+i--- ai_chat.c
++++ ai_chat.c
+@@ -162,6 +162,189 @@
+ static void autoscroll_soon(void) { g_idle_add(autoscroll_idle_cb, NULL); }
+ static Ui ui;
+ 
++/* ---------- Clickable links (labels with Pango <a href=...>) ---------- */
++/* Convert plaintext + Markdown [label](url) + bare URLs into Pango markup with <a>. */
++/* No linkification inside triple-backtick code fences. */
++
++static gboolean
++on_label_activate_link(GtkLabel *label, const gchar *uri, gpointer user_data)
++{
++    (void)user_data;
++    GError *err = NULL;
++
++    /* prefer a parent to keep focus/raise behavior correct */
++    GtkWidget *toplevel = gtk_widget_get_toplevel(GTK_WIDGET(label));
++    if (!GTK_IS_WINDOW(toplevel))
++        toplevel = NULL;
++
++    gtk_show_uri_on_window(GTK_WINDOW(toplevel), uri, GDK_CURRENT_TIME, &err);
++    if (err)
++    {
++        g_warning("AI Chat: open link failed: %s", err->message);
++        g_clear_error(&err);
++    }
++    return TRUE; /* handled — do not propagate to Geany handlers */
++}
++
++static inline gboolean
++is_url_char(gunichar c)
++{
++    /* conservative allowlist for URLs */
++    if (g_unichar_isalnum(c)) return TRUE;
++    switch (c)
++    {
++        case '/': case ':': case '?': case '#': case '&': case '=':
++        case '%': case '.': case '-': case '_': case '+': case '~':
++        case '@': case '!': case '*': case '\'': case '(': case ')':
++            return TRUE;
++        default: return FALSE;
++    }
++}
++
++static void
++append_escaped(GString *out, const gchar *s, gssize len)
++{
++    if (len < 0) len = (gssize)strlen(s);
++    gchar *esc = g_markup_escape_text(s, (gssize)len);
++    g_string_append(out, esc);
++    g_free(esc);
++}
++
++static gchar*
++mk_markup_with_links(const gchar *src)
++{
++    if (!src) return g_strdup("");
++    const gchar *p = src;
++    GString *out = g_string_new(NULL);
++    GString *plain = g_string_new(NULL);
++    gboolean in_fence = FALSE;
++
++    while (*p)
++    {
++        /* toggle fence on ``` */
++        if (!in_fence && p[0]=='`' && p[1]=='`' && p[2]=='`')
++        {
++            /* flush any pending plain */
++            if (plain->len) { append_escaped(out, plain->str, plain->len); g_string_set_size(plain, 0); }
++            in_fence = TRUE;
++            /* copy as escaped until fence closes */
++            const gchar *q = strstr(p+3, "```");
++            if (!q) { append_escaped(out, p, -1); break; }
++            append_escaped(out, p, (q+3)-p);
++            p = q+3;
++            in_fence = FALSE;
++            continue;
++        }
++
++        if (!in_fence && *p == '[')
++        {
++            /* Try Markdown [label](url) with simple escaping of ] and ) via backslash */
++            const gchar *lb = p + 1;
++            const gchar *rb = NULL;
++            for (const gchar *t = lb; *t; ++t)
++            {
++                if (*t == '\\' && t[1]) { ++t; continue; }
++                if (*t == ']') { rb = t; break; }
++                if (*t == '\n') break;
++            }
++            if (rb && rb[1] == '(')
++            {
++                const gchar *ub = NULL; /* url closing ) */
++                const gchar *u = rb + 2;
++                if (u[0] == 0) { /* nothing */ }
++                else
++                {
++                    for (const gchar *t = u; *t; ++t)
++                    {
++                        if (*t == '\\' && t[1]) { ++t; continue; }
++                        if (*t == ')') { ub = t; break; }
++                        if (*t == '\n') break;
++                    }
++                }
++                if (ub && ub > u)
++                {
++                    /* Flush plain */
++                    if (plain->len) { append_escaped(out, plain->str, plain->len); g_string_set_size(plain, 0); }
++
++                    gchar *label = g_strndup(lb, rb - lb);
++                    gchar *url   = g_strndup(u,  ub - u);
++
++                    /* Normalize www. */
++                    if (g_str_has_prefix(url, "www."))
++                    {
++                        gchar *tmp = g_strconcat("https://", url, NULL);
++                        g_free(url);
++                        url = tmp;
++                    }
++
++                    gchar *url_esc = g_markup_escape_text(url, -1);
++                    g_string_append_printf(out, "<a href=\"%s\">", url_esc);
++                    g_free(url_esc);
++
++                    /* Label: keep original text, but escape markup */
++                    append_escaped(out, label, -1);
++                    g_string_append(out, "</a>");
++
++                    g_free(label);
++                    g_free(url);
++
++                    p = ub + 1;
++                    continue;
++                }
++            }
++        }
++
++        if (!in_fence && (g_str_has_prefix(p, "http://") || g_str_has_prefix(p, "https://") || g_str_has_prefix(p, "www.")))
++        {
++            /* detect end */
++            const gchar *q = p;
++            while (*q)
++            {
++                gunichar ch = g_utf8_get_char(q);
++                if (!is_url_char(ch)) break;
++                q = g_utf8_next_char(q);
++            }
++
++            /* trim trailing punctuation that is unlikely part of URL */
++            while (q > p && strchr(").,;:!?", (unsigned char)q[-1]) != NULL)
++                q--;
++
++            /* Flush plain */
++            if (plain->len) { append_escaped(out, plain->str, plain->len); g_string_set_size(plain, 0); }
++
++            gchar *disp = g_strndup(p, q - p);
++            gchar *href;
++            if (g_str_has_prefix(disp, "www."))
++                href = g_strconcat("https://", disp, NULL);
++            else
++                href = g_strdup(disp);
++
++            gchar *href_esc = g_markup_escape_text(href, -1);
++            g_string_append_printf(out, "<a href=\"%s\">", href_esc);
++            g_free(href_esc);
++
++            append_escaped(out, disp, -1);
++            g_string_append(out, "</a>");
++
++            g_free(disp);
++            g_free(href);
++
++            p = q;
++            continue;
++        }
++
++        /* accumulate plain text */
++        plain = g_string_append_c(plain, *p);
++        p++;
++    }
++
++    /* flush remainder */
++    if (plain->len) { append_escaped(out, plain->str, plain->len); }
++
++    g_string_free(plain, TRUE);
++    return g_string_free(out, FALSE);
++}
+@@ -205,11 +388,18 @@
+     gtk_label_set_markup(GTK_LABEL(hdr), markup);
+     g_free(markup);
+     gtk_label_set_xalign(GTK_LABEL(hdr), 0.0);
+ 
+-    GtkWidget *lbl = gtk_label_new(text);
+-    gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
+-    gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
+-    gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
++    GtkWidget *lbl = gtk_label_new(NULL);
++    gchar *markup_txt = mk_markup_with_links(text);
++    gtk_label_set_markup(GTK_LABEL(lbl), markup_txt);
++    g_free(markup_txt);
++    gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
++    gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
++    gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
++    g_signal_connect(lbl, "activate-link",
++                     G_CALLBACK(on_label_activate_link), NULL);
+ 
+     gtk_box_pack_start(GTK_BOX(outer), hdr, FALSE, FALSE, 0);
+     gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
+ 
+@@ -444,12 +634,19 @@ static GtkWidget* build_assistant_composite_from_markdown(const gchar *text)
+         if (f > p)
+         {
+             gchar *para = g_strndup(p, f - p);
+-            GtkWidget *lbl = gtk_label_new(para);
+-            gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
+-            gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
+-            gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
+-            gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
+-            g_free(para);
++            GtkWidget *lbl = gtk_label_new(NULL);
++            gchar *markup_txt = mk_markup_with_links(para);
++            gtk_label_set_markup(GTK_LABEL(lbl), markup_txt);
++            g_free(markup_txt);
++            gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
++            gtk_label_set_line_wrap(GTK_LABEL(lbl), TRUE);
++            gtk_label_set_selectable(GTK_LABEL(lbl), TRUE);
++            g_signal_connect(lbl, "activate-link",
++                             G_CALLBACK(on_label_activate_link), NULL);
++            gtk_box_pack_start(GTK_BOX(outer), lbl, FALSE, FALSE, 0);
++            g_free(para);
+         }
+ 
+         const gchar *lang_start = f + 3;
+         const gchar *nl = strchr(lang_start, '\n');
+
